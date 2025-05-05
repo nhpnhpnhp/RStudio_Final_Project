@@ -1,0 +1,184 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-04-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Phân tích số liệu thế giới theo từng quốc gia mỗi ngày(covid_19_clean_complete.csv)
+  1.Đọc dữ liệu
+```{r}
+# Cài đặt các gói cần thiết 
+install.packages('plotly')
+install.packages('maps')
+install.packages('leaflet')
+# Load các thư viện
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(plotly)
+library(maps)
+library(leaflet)
+library(gridExtra)
+
+# Đọc dữ liệu từ file CSV
+covid_19_clean_complete<-read_csv('covid_19_clean_complete.csv')
+# Xem cấu trúc dữ liệu
+glimpse(covid_19_clean_complete)
+# Kiểm tra dữ liệu thiếu
+sum(is.na(covid_19_clean_complete))
+colSums(is.na(covid_19_clean_complete))
+```
+
+  2.Qua kết quả trên ta thấy chỉ có cột Province/State là có rất nhiều ô trống nên ta sẽ xử lí cho các ô trống của cột đó là 'Unknown' và chuyển đổi kiểu dữ liệu của cột Date thành kiểu dữ liệu Date
+```{r}
+# Xử lý dữ liệu thiếu cho cột Province/State
+covid_19_clean_complete <- covid_19_clean_complete %>% 
+  mutate(`Province/State` = ifelse(is.na(`Province/State`), "Unknown", `Province/State`))
+# Chuyển đổi kiểu dữ liệu ngày tháng
+covid_19_clean_complete<- covid_19_clean_complete %>% 
+  mutate(Date = as.Date(Date))
+# Kiểm tra lại dữ liệu
+summary(covid_19_clean_complete)
+```
+  3.Phân tích tổng quan
+```{r}
+# Tổng số ca nhiễm, tử vong và hồi phục theo thời gian
+daily_summary <- covid_19_clean_complete %>% 
+  group_by(Date) %>% 
+  summarise(
+    Total_Confirmed = sum(Confirmed, na.rm = TRUE),
+    Total_Deaths = sum(Deaths, na.rm = TRUE),
+    Total_Recovered = sum(Recovered, na.rm = TRUE),
+    Total_Active = sum(Active, na.rm = TRUE)
+  )
+# Hiển thị biểu đồ tổng quan
+ggplot(daily_summary, aes(x = Date)) +
+  geom_line(aes(y = Total_Confirmed, color = "Confirmed"), size = 1) +
+  geom_line(aes(y = Total_Deaths, color = "Deaths"), size = 1) +
+  geom_line(aes(y = Total_Recovered, color = "Recovered"), size = 1) +
+  scale_color_manual(values = c("Confirmed" = "orange", "Deaths" = "red", "Recovered" = "green")) +
+  labs(title = "COVID-19 Cases Over Time", 
+       x = "Date", 
+       y = "Number of Cases", 
+       color = "Case Type") +
+  theme_minimal()
+```
+  4.Phân tích theo quốc gia/khu vực
+```{r}
+# Top 10 quốc gia bị ảnh hưởng nặng nhất
+top_countries <- covid_19_clean_complete %>% 
+  group_by(`Country/Region`) %>% 
+  summarise(
+    Total_Confirmed = sum(Confirmed, na.rm = TRUE),
+    Total_Deaths = sum(Deaths, na.rm = TRUE),
+    Total_Recovered = sum(Recovered, na.rm = TRUE)
+  ) %>% 
+  arrange(desc(Total_Confirmed)) %>% 
+  head(10)
+top_countries
+
+# Biểu đồ cột cho top 10 quốc gia
+ggplot(top_countries, aes(x = reorder(`Country/Region`, -Total_Confirmed), y = Total_Confirmed)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = Total_Confirmed), vjust = -0.5) +
+  labs(title = "Top 10 Countries by Confirmed Cases", 
+       x = "Country", 
+       y = "Confirmed Cases") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Tỷ lệ tử vong theo quốc gia
+country_stats <- covid_19_clean_complete %>% 
+  group_by(`Country/Region`) %>% 
+  summarise(
+    Confirmed = sum(Confirmed, na.rm = TRUE),
+    Deaths = sum(Deaths, na.rm = TRUE),
+    Recovered = sum(Recovered, na.rm = TRUE),
+    Mortality_Rate = ifelse(Confirmed > 0, Deaths/Confirmed * 100, 0)
+  ) %>% 
+  filter(Confirmed > 1000) %>% 
+  arrange(desc(Mortality_Rate))
+
+head(country_stats)
+```
+  5.Phân tích theo khu vực WHO với Mortality_Rate(tỉ lệ tử vong)=(Deaths/Confirmed)x100
+```{r}
+# Phân tích theo khu vực WHO
+who_region_stats <- covid_19_clean_complete %>% 
+  group_by(`WHO Region`) %>% 
+  summarise(
+    Confirmed = sum(Confirmed, na.rm = TRUE),
+    Deaths = sum(Deaths, na.rm = TRUE),
+    Recovered = sum(Recovered, na.rm = TRUE),
+    Mortality_Rate = ifelse(Confirmed > 0, Deaths/Confirmed * 100, 0)
+  ) %>% 
+  arrange(desc(Confirmed))
+who_region_stats
+
+ #Biểu đồ tròn cho phân bố ca nhiễm theo khu vực
+plot_ly(who_region_stats, labels = ~`WHO Region`, values = ~Confirmed, type = 'pie') %>%
+  layout(title = 'Distribution of COVID-19 Cases by WHO Region')
+```
+
+  6.Phân tích không gian (bản đồ)
+
+```{r}
+# Chuẩn bị dữ liệu cho bản đồ
+map_data <- covid_19_clean_complete %>% 
+  group_by(`Country/Region`, Lat, Long) %>% 
+  summarise(
+    Confirmed = sum(Confirmed, na.rm = TRUE),
+    Deaths = sum(Deaths, na.rm = TRUE),
+    Recovered = sum(Recovered, na.rm = TRUE)
+  ) %>% 
+  ungroup() %>% 
+  filter(Confirmed > 0)
+
+# Tạo bản đồ tương tác
+leaflet(map_data) %>% 
+  addTiles() %>% 
+  addCircleMarkers(
+    lng = ~Long, 
+    lat = ~Lat,
+    radius = ~log(Confirmed)*2,
+    color = "red",
+    fillOpacity = 0.5,
+    popup = paste(
+      "Country: ", map_data$`Country/Region`, "<br>",
+      "Confirmed: ", map_data$Confirmed, "<br>",
+      "Deaths: ", map_data$Deaths, "<br>",
+      "Recovered: ", map_data$Recovered
+    )
+  ) %>% 
+  addLegend("bottomright", 
+            colors = "red", 
+            labels = "COVID-19 Cases", 
+            title = "Legend")
+```
+  7.Sự tương quan giữa các biến
+```{r}
+
+# Phân tích tương quan giữa các biến
+correlation_data <- covid_19_clean_complete %>% 
+  group_by(`Country/Region`) %>% 
+  summarise(
+    Confirmed = sum(Confirmed, na.rm = TRUE),
+    Deaths = sum(Deaths, na.rm = TRUE),
+    Recovered = sum(Recovered, na.rm = TRUE),
+    Mortality_Rate = ifelse(Confirmed > 0, Deaths/Confirmed * 100, 0)
+  ) %>% 
+  filter(Confirmed > 1000)
+
+# Ma trận tương quan
+cor_matrix <- cor(correlation_data[, c("Confirmed", "Deaths", "Recovered", "Mortality_Rate")], use = "complete.obs")
+print(cor_matrix)
+```
+
+```{r}
+
+
+```
+

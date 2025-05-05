@@ -1,0 +1,21 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-04-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+1.Kiểm tra dữ liệu
+```{r}
+library(readr)
+covid_19_clean_complete<-read.csv('covid_19_clean_complete.csv')
+#Xem cấu trúc dữ liệu
+str(covid_19_clean_complete)
+# Tổng hợp giá trị missing
+colSums(is.na(covid_19_clean_complete))
+# Tỷ lệ giá trị missing theo cột
+sapply(covid_19_clean_complete, function(x) mean(is.na(x)))
+```
+

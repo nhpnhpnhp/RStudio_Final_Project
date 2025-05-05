@@ -1,0 +1,183 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-04-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+1.Chuẩn bị dữ liệu
+```{r}
+# Đọc dữ liệu
+worldometer_data <- read.csv("worldometer_data.csv", stringsAsFactors = FALSE)
+
+# Xem cấu trúc dữ liệu
+str(worldometer_data)
+
+# Kiểm tra dữ liệu thiếu
+sum(is.na(worldometer_data))
+colSums(is.na(worldometer_data))
+# Chuyển đổi kiểu dữ liệu nếu cần
+worldometer_data$Population <- as.numeric(worldometer_data$Population)
+worldometer_data$TotalCases <- as.numeric(worldometer_data$TotalCases)
+worldometer_data$TotalDeaths <- as.numeric(worldometer_data$TotalDeaths)
+
+# Xử lý dữ liệu thiếu (thay bằng 0 )
+worldometer_data[is.na(worldometer_data)] <- 0
+print(worldometer_data)
+```
+2.Phân tích tổng quan
+```{r}
+# Tổng số ca nhiễm, tử vong theo châu lục
+library(dplyr)
+
+summary_by_continent <- worldometer_data %>%
+  group_by(Continent) %>%
+  summarise(
+    TotalCases = sum(TotalCases, na.rm = TRUE),
+    TotalDeaths = sum(TotalDeaths, na.rm = TRUE),
+    Population = sum(Population, na.rm = TRUE),
+    CasesPerMillion = (TotalCases / Population) * 1000000,
+    DeathsPerMillion = (TotalDeaths / Population) * 1000000,
+    TestsPerMillion=(TotalTests / Population ) *1000000,
+    DeathRate = (TotalDeaths / TotalCases) * 100,
+    AvgCasesPerMillion = mean(CasesPerMillion, na.rm = TRUE),
+    AvgDeathsPerMillion = mean(DeathsPerMillion, na.rm = TRUE),
+    AvgDeathRate = mean(DeathRate, na.rm = TRUE)
+  ) %>%
+  arrange(desc(TotalCases))
+
+print(summary_by_continent)
+
+# Tổng số ca nhiễm, tử vong theo khu vực WHO
+summary_by_region <- worldometer_data %>%
+  group_by(WHO.Region) %>%
+  summarise(
+    TotalCases = sum(TotalCases, na.rm = TRUE),
+    TotalDeaths = sum(TotalDeaths, na.rm = TRUE),
+    Population = sum(Population, na.rm = TRUE),
+    CasesPerMillion = (TotalCases / Population) * 1000000,
+    DeathsPerMillion = (TotalDeaths / Population) * 1000000,
+    TestsPerMillion=(TotalTests / Population ) *1000000,
+    DeathRate = (TotalDeaths / TotalCases) * 100,
+    AvgCasesPerMillion = mean(CasesPerMillion, na.rm = TRUE),
+    AvgDeathsPerMillion = mean(DeathsPerMillion, na.rm = TRUE),
+    AvgDeathRate = mean(DeathRate, na.rm = TRUE)
+  ) %>%
+  arrange(desc(TotalCases))
+
+print(summary_by_region)
+```
+3.Phân tích tương quan và hồi quy
+```{r}
+# Tương quan giữa số ca nhiễm và số ca tử vong
+correlation <- cor(worldometer_data$TotalCases, worldometer_data$TotalDeaths, use = "complete.obs")
+print(paste("Hệ số tương quan giữa TotalCases và TotalDeaths:", correlation))
+
+# Hồi quy tuyến tính
+model <- lm(TotalDeaths ~ TotalCases + Population + Tot.Cases.1M.pop, data = worldometer_data)
+summary(model)
+
+# Phân tích ANOVA
+anova_result <- aov(TotalDeaths ~ Continent, data = worldometer_data)
+summary(anova_result)
+```
+4.Trực quan hoá dữ liệu
+```{r}
+library(ggplot2)
+library(plotly)
+
+# Biểu đồ số ca nhiễm theo châu lục
+ggplot(summary_by_continent, aes(x = reorder(Continent, -TotalCases), y = TotalCases, fill = Continent)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Tổng số ca nhiễm COVID-19 theo châu lục",
+       x = "Châu lục",
+       y = "Tổng số ca nhiễm") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Biểu đồ phân tán giữa số ca nhiễm và số ca tử vong
+ggplot(worldometer_data, aes(x = TotalCases, y = TotalDeaths, color = Continent, size = Population)) +
+  geom_point(alpha = 0.6) +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(title = "Mối quan hệ giữa số ca nhiễm và số ca tử vong",
+       x = "Tổng số ca nhiễm (log scale)",
+       y = "Tổng số ca tử vong (log scale)") +
+  theme_minimal()
+
+# Bản đồ nhiệt tỷ lệ tử vong
+library(maps)
+world_map <- map_data("world")
+worldometer_data$Country.Region <- gsub("USA", "United States", worldometer_data$Country.Region)
+# Thêm các chuyển đổi tên quốc gia khác nếu cần
+
+map_data <- merge(world_map, worldometer_data, by.x = "region", by.y = "Country.Region", all.x = TRUE)
+map_data <- map_data[order(map_data$order), ]
+
+ggplot(map_data, aes(x = long, y = lat, group = group, fill = Deaths.1M.pop)) +
+  geom_polygon(color = "white") +
+  scale_fill_viridis_c(option = "C", na.value = "grey90") +
+  labs(title = "Tỷ lệ tử vong do COVID-19 trên 1 triệu dân",
+       fill = "Deaths per 1M") +
+  theme_void()
+```
+5.So sánh tỷ lệ nhiễm và tử vong
+  5.1 Biểu đồ so sánh tỷ lệ nhiễm (Cases per Million)
+```{r}
+ggplot(summary_by_continent, aes(x = reorder(Continent, -AvgCasesPerMillion), y = AvgCasesPerMillion, fill = Continent)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Tỷ lệ nhiễm COVID-19 trung bình trên 1 triệu dân theo châu lục",
+    x = "Châu lục",
+    y = "Số ca nhiễm / 1 triệu dân"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Nhận xét:
+
+Châu Âu (Europe) có tỷ lệ nhiễm cao nhất, có thể do mật độ dân số cao và xét nghiệm rộng rãi.
+
+Châu Phi (Africa) có tỷ lệ thấp nhất, có thể do hạn chế xét nghiệm hoặc dữ liệu không đầy đủ.
+
+
+
+  5.2 Biểu đồ so sánh tỷ lệ tử vong (Deaths per Million)
+```{r}
+ggplot(summary_by_continent, aes(x = reorder(Continent, -AvgDeathsPerMillion), y = AvgDeathsPerMillion, fill = Continent)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Tỷ lệ tử vong COVID-19 trung bình trên 1 triệu dân theo châu lục",
+    x = "Châu lục",
+    y = "Số ca tử vong / 1 triệu dân"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Nhận xét:
+
+Nam Mỹ (South America) có tỷ lệ tử vong cao nhất, có thể do hệ thống y tế quá tải.
+
+Châu Đại Dương (Australia/Oceania) có tỷ lệ thấp nhất nhờ kiểm soát dịch tốt.
+
+
+  5.3 Biểu đồ tỷ lệ tử vong trên số ca nhiễm (Death Rate)
+```{r}
+ggplot(summary_by_continent, aes(x = reorder(Continent, -AvgDeathRate), y = AvgDeathRate, fill = Continent)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Tỷ lệ tử vong (%) trên tổng số ca nhiễm theo châu lục",
+    x = "Châu lục",
+    y = "Tỷ lệ tử vong (%)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Nhận xét:
+
+Châu Âu (Europe) có tỷ lệ tử vong cao, có thể do dân số già.
+
+Châu Phi (Africa) có tỷ lệ thấp, có thể do dân số trẻ hoặc báo cáo không đầy đủ.
+
