@@ -1,0 +1,199 @@
+---
+title: "SIR"
+output: html_document
+date: "2025-05-09"
+---
+Trước tiên, chúng ta cần kiểm tra và làm sạch dữ liệu:
+
+```{r setup, include=FALSE}
+# Đọc dữ liệu
+data <- read.csv("day_wise.csv")
+
+# Kiểm tra cấu trúc dữ liệu
+str(data)
+
+# Kiểm tra giá trị missing
+sum(is.na(data))
+
+# Chuyển đổi cột Date sang định dạng ngày tháng
+data$Date <- as.Date(data$Date)
+
+# Sắp xếp dữ liệu theo ngày (nếu cần)
+data <- data[order(data$Date), ]
+
+# Kiểm tra lại
+head(data)
+summary(data)
+```
+
+Mô hình SIR chia dân số thành 3 nhóm:
+
+S (Susceptible): Những người dễ nhiễm bệnh
+
+I (Infectious): Những người đang nhiễm bệnh và có khả năng lây lan
+
+R (Recovered): Những người đã hồi phục hoặc tử vong (không còn khả năng lây nhiễm)
+
+Các phương trình vi phân của mô hình SIR:
+dS/dt = -βSI
+
+dI/dt = βSI - γI
+
+dR/dt = γI
+
+Trong đó:
+
+β: Tốc độ lây nhiễm
+
+γ: Tốc độ hồi phục
+```{r}
+library(deSolve)
+
+# Hàm mô hình SIR
+sir_model <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dS <- -beta * S * I
+    dI <- beta * S * I - gamma * I
+    dR <- gamma * I
+    
+    return(list(c(dS, dI, dR)))
+  })
+}
+
+# Ước lượng tham số từ dữ liệu thực tế
+# Giả sử tổng dân số thế giới là 7.8 tỷ người
+N <- 7.8e9
+
+# Chuẩn bị dữ liệu cho mô hình
+# Sử dụng Active cases cho Infectious (I)
+# Recovered + Deaths cho Recovered (R)
+# Susceptible = Tổng dân số - I - R
+
+data$S <- N - data$Active - (data$Recovered + data$Deaths)
+data$I <- data$Active
+data$R <- data$Recovered + data$Deaths
+
+# Chọn khoảng thời gian do người dùng nhập
+# Ví dụ: từ ngày 2020-03-01 đến 2020-05-01
+start_date <- as.Date("2020-03-01")
+end_date <- as.Date("2020-05-01")
+
+subset_data <- data[data$Date >= start_date & data$Date <= end_date, ]
+
+# Ước lượng tham số beta và gamma
+# Tính gamma từ tỷ lệ hồi phục trung bình
+gamma <- mean(subset_data$New.recovered / subset_data$Active, na.rm = TRUE)
+
+# Tính beta từ phương trình dI/dt
+# dI/dt ≈ New.cases - New.recovered - New.deaths
+# beta ≈ (dI/dt + gamma*I) / (S*I)
+subset_data$dI <- c(NA, diff(subset_data$I))
+subset_data$beta_est <- (subset_data$dI + gamma * subset_data$I) / (subset_data$S * subset_data$I)
+
+beta <- mean(subset_data$beta_est, na.rm = TRUE)
+
+# Giá trị ban đầu
+init <- c(S = subset_data$S[1],
+          I = subset_data$I[1],
+          R = subset_data$R[1])
+
+# Tham số
+parameters <- c(beta = beta,
+                gamma = gamma)
+
+# Thời gian (số ngày)
+times <- 1:nrow(subset_data)
+
+# Chạy mô hình
+out <- ode(y = init, times = times, func = sir_model, parms = parameters)
+
+# Chuyển kết quả thành data frame
+out <- as.data.frame(out)
+
+# Vẽ đồ thị so sánh với dữ liệu thực tế
+library(ggplot2)
+
+ggplot() +
+  geom_line(data = out, aes(x = time, y = I, color = "Mô hình")) +
+  geom_line(data = subset_data, aes(x = 1:nrow(subset_data), y = I, color = "Thực tế")) +
+  labs(title = "So sánh số ca nhiễm (I) giữa mô hình và thực tế",
+       x = "Ngày", y = "Số ca nhiễm") +
+  scale_color_manual(values = c("Mô hình" = "red", "Thực tế" = "blue")) +
+  theme_minimal()
+```
+3. Tính toán các chỉ số theo yêu cầu
+Tính tốc độ hồi phục trong khoảng thời gian
+
+```{r}
+calculate_recovery_rate <- function(data, start_date, end_date) {
+  subset <- data[data$Date >= as.Date(start_date) & data$Date <= as.Date(end_date), ]
+  
+  total_recovered <- tail(subset$Recovered, 1) - head(subset$Recovered, 1)
+  total_active <- mean(subset$Active)
+  
+  recovery_rate <- total_recovered / (as.numeric(as.Date(end_date) - as.Date(start_date)) * total_active)
+  
+  return(recovery_rate)
+}
+
+# Ví dụ sử dụng
+recovery_rate <- calculate_recovery_rate(data, "2020-03-01", "2020-05-01")
+cat("Tốc độ hồi phục trung bình:", recovery_rate, "ca/ngày/ca đang điều trị\n")
+```
+
+
+
+
+Tính tốc độ thay đổi số ca nhiễm trong khoảng thời gian
+
+```{r}
+calculate_infection_change_rate <- function(data, start_date, end_date) {
+  subset <- data[data$Date >= as.Date(start_date) & data$Date <= as.Date(end_date), ]
+  
+  total_new_cases <- sum(subset$New.cases)
+  total_active <- mean(subset$Active)
+  total_susceptible <- mean(N - subset$Active - subset$Recovered - subset$Deaths)
+  
+  # Ước lượng beta từ phương trình dI/dt
+  beta_estimate <- total_new_cases / (total_active * total_susceptible * as.numeric(as.Date(end_date) - as.Date(start_date)))
+  
+  return(beta_estimate)
+}
+
+# Ví dụ sử dụng
+infection_rate <- calculate_infection_change_rate(data, "2020-03-01", "2020-05-01")
+cat("Tốc độ thay đổi số ca nhiễm (beta ước lượng):", infection_rate, "\n")
+```
+4. Phân tích và trực quan hóa dữ liệu
+Phân tích các tỷ lệ
+```{r}
+# Tính các tỷ lệ trung bình
+mean_death_rate <- mean(data$Deaths / 100 * data$Confirmed / data$Confirmed * 100, na.rm = TRUE)
+mean_recovery_rate <- mean(data$Recovered / data$Confirmed * 100, na.rm = TRUE)
+mean_death_per_recovered <- mean(data$Deaths / data$Recovered * 100, na.rm = TRUE)
+
+cat("Tỷ lệ tử vong trung bình:", mean_death_rate, "%\n")
+cat("Tỷ lệ hồi phục trung bình:", mean_recovery_rate, "%\n")
+cat("Tỷ lệ tử vong trên số hồi phục trung bình:", mean_death_per_recovered, "%\n")
+```
+
+
+Trực quan hóa dữ liệu
+```{r}
+library(ggplot2)
+
+# Biểu đồ số ca mới theo ngày
+ggplot(data, aes(x = Date, y = New.cases)) +
+  geom_line(color = "blue") +
+  labs(title = "Số ca mới mỗi ngày", x = "Ngày", y = "Số ca mới") +
+  theme_minimal()
+
+# Biểu đồ số ca tích lũy
+ggplot(data, aes(x = Date)) +
+  geom_line(aes(y = Confirmed, color = "Tổng ca")) +
+  geom_line(aes(y = Recovered, color = "Hồi phục")) +
+  geom_line(aes(y = Deaths, color = "Tử vong")) +
+  labs(title = "Diễn biến dịch COVID-19", x = "Ngày", y = "Số ca") +
+  scale_color_manual(values = c("Tổng ca" = "orange", "Hồi phục" = "green", "Tử vong" = "red")) +
+  theme_minimal()
+```
