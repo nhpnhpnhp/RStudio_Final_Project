@@ -10,10 +10,6 @@ knitr::opts_chunk$set(echo = TRUE)
 Phân tích số liệu thế giới theo từng quốc gia mỗi ngày(covid_19_clean_complete.csv)
   1.Đọc dữ liệu
 ```{r}
-# Cài đặt các gói cần thiết 
-install.packages('plotly')
-install.packages('maps')
-install.packages('leaflet')
 # Load các thư viện
 library(tidyverse)
 library(lubridate)
@@ -123,62 +119,147 @@ plot_ly(who_region_stats, labels = ~`WHO Region`, values = ~Confirmed, type = 'p
   layout(title = 'Distribution of COVID-19 Cases by WHO Region')
 ```
 
-  6.Phân tích không gian (bản đồ)
-
+ 
+  7.Sự tương quan giữa các biến
 ```{r}
-# Chuẩn bị dữ liệu cho bản đồ
-map_data <- covid_19_clean_complete %>% 
-  group_by(`Country/Region`, Lat, Long) %>% 
+
+selected_country <- "Italy"
+
+# Lọc dữ liệu cho quốc gia đó và tổng hợp theo ngày
+country_data <- covid_19_clean_complete %>%
+  filter(`Country/Region` == selected_country) %>%
+  group_by(Date) %>%
   summarise(
     Confirmed = sum(Confirmed, na.rm = TRUE),
     Deaths = sum(Deaths, na.rm = TRUE),
     Recovered = sum(Recovered, na.rm = TRUE)
-  ) %>% 
-  ungroup() %>% 
-  filter(Confirmed > 0)
+  ) %>%
+  filter(Confirmed > 0 & Recovered > 0)  # loại bỏ các dòng chưa có dữ liệu
 
-# Tạo bản đồ tương tác
-leaflet(map_data) %>% 
-  addTiles() %>% 
-  addCircleMarkers(
-    lng = ~Long, 
-    lat = ~Lat,
-    radius = ~log(Confirmed)*2,
-    color = "red",
-    fillOpacity = 0.5,
-    popup = paste(
-      "Country: ", map_data$`Country/Region`, "<br>",
-      "Confirmed: ", map_data$Confirmed, "<br>",
-      "Deaths: ", map_data$Deaths, "<br>",
-      "Recovered: ", map_data$Recovered
-    )
-  ) %>% 
-  addLegend("bottomright", 
-            colors = "red", 
-            labels = "COVID-19 Cases", 
-            title = "Legend")
+# Hồi quy tuyến tính: Dự đoán số ca tử vong theo số ca nhiễm và hồi phục
+lm_model <- lm(Deaths ~ Confirmed + Recovered, data = country_data)
+model_summary <- summary(lm_model)
+
+# In kết quả mô hình
+print(model_summary)
+
+# Trích xuất các thông tin
+r_squared <- model_summary$r.squared
+intercept <- coef(model_summary)[1]
+confirmed_coef <- coef(model_summary)[2]
+recovered_coef <- coef(model_summary)[3]
+confirmed_p <- coef(summary(lm_model))["Confirmed", "Pr(>|t|)"]
+recovered_p <- coef(summary(lm_model))["Recovered", "Pr(>|t|)"]
+
+# Diễn giải
+cat("\n--- Diễn giải mô hình hồi quy cho", selected_country, "---\n")
+cat(sprintf("Mô hình giải thích %.1f%% phương sai của số ca tử vong (R² = %.2f).\n", 
+            r_squared * 100, r_squared))
+
+cat(sprintf("Khi số ca nhiễm tăng thêm 1, số ca tử vong ước tính tăng trung bình %.4f ca. ", confirmed_coef))
+if (confirmed_p < 0.05) {
+  cat("Ảnh hưởng có ý nghĩa thống kê (p < 0.05).\n")
+} else {
+  cat("Ảnh hưởng KHÔNG có ý nghĩa thống kê (p ≥ 0.05).\n")
+}
+
+cat(sprintf("Khi số ca hồi phục tăng thêm 1, số ca tử vong ước tính tăng trung bình %.4f ca. ", recovered_coef))
+if (recovered_p < 0.05) {
+  cat("Ảnh hưởng có ý nghĩa thống kê (p < 0.05).\n")
+} else {
+  cat("Ảnh hưởng KHÔNG có ý nghĩa thống kê (p ≥ 0.05).\n")
+}
+
 ```
-  7.Sự tương quan giữa các biến
-```{r}
 
-# Phân tích tương quan giữa các biến
-correlation_data <- covid_19_clean_complete %>% 
-  group_by(`Country/Region`) %>% 
+```{r}
+anova_data <- covid_19_clean_complete %>%
+  group_by(`Country/Region`, `WHO Region`) %>%
   summarise(
-    Confirmed = sum(Confirmed, na.rm = TRUE),
-    Deaths = sum(Deaths, na.rm = TRUE),
-    Recovered = sum(Recovered, na.rm = TRUE),
-    Mortality_Rate = ifelse(Confirmed > 0, Deaths/Confirmed * 100, 0)
-  ) %>% 
-  filter(Confirmed > 1000)
+    Confirmed = sum(Confirmed),
+    Deaths = sum(Deaths),
+    .groups = "drop"
+  ) %>%
+  filter(Confirmed > 1000) %>%  # Lọc bớt các quốc gia có ít dữ liệu
+  mutate(Mortality_Rate = Deaths / Confirmed * 100)
 
-# Ma trận tương quan
-cor_matrix <- cor(correlation_data[, c("Confirmed", "Deaths", "Recovered", "Mortality_Rate")], use = "complete.obs")
-print(cor_matrix)
+# Kiểm định ANOVA
+anova_model <- aov(Mortality_Rate ~ `WHO Region`, data = anova_data)
+summary(anova_model)
+
+remove_outliers <- function(data, column_name) {
+  Q1 <- quantile(data[[column_name]], 0.25, na.rm = TRUE)
+  Q3 <- quantile(data[[column_name]], 0.75, na.rm = TRUE)
+  IQR_value <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR_value
+  upper_bound <- Q3 + 1.5 * IQR_value
+
+  # Ghi nhận các giá trị bị loại
+  outliers <- data %>% filter(data[[column_name]] < lower_bound | data[[column_name]] > upper_bound)
+
+  # Xoá các giá trị ngoại lệ
+  cleaned_data <- data %>% filter(data[[column_name]] >= lower_bound & data[[column_name]] <= upper_bound)
+
+  return(list(cleaned_data = cleaned_data, outliers = outliers))
+}
+# Tìm và loại bỏ ngoại lệ trong cột Mortality_Rate
+outlier_result <- remove_outliers(anova_data, "Mortality_Rate")
+
+# Dữ liệu sau khi loại bỏ
+anova_clean <- outlier_result$cleaned_data
+
+# Dữ liệu ngoại lệ bị loại bỏ (nếu bạn muốn xem xét)
+outlier_values <- outlier_result$outliers
+
+# Kiểm tra kết quả
+print(paste("Số lượng ngoại lệ:", nrow(outlier_values)))
+ggplot(anova_clean, aes(x = `WHO Region`, y = Mortality_Rate, fill = `WHO Region`)) +
+  geom_violin(alpha = 0.6) +  # Violin Plot với độ trong suốt 0.6
+  geom_jitter(width = 0.2, alpha = 0.5, color = "black") +  # Jitter cho các điểm
+  labs(title = "Distribution of Mortality Rate by WHO Region",
+       x = "WHO Region",
+       y = "Mortality Rate (%)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")  # Tắt hiển thị legend
 ```
+🔍 Cách đọc biểu đồ Violin Plot:
+1. Trục hoành (X-axis):
+Gồm các khu vực của Tổ chức Y tế Thế giới (WHO Region): Africa, Americas, Eastern Mediterranean, Europe, South-East Asia, Western Pacific.
 
-```{r}
+2. Trục tung (Y-axis):
+Biểu thị tỷ lệ tử vong (%) = (Deaths / Confirmed) × 100 của từng quốc gia thuộc mỗi khu vực.
 
+3. Hình dáng "Violin":
+Hình dạng của mỗi violin biểu thị mật độ phân phối của dữ liệu:
 
-```
+Chỗ phình to: Nơi có nhiều quốc gia có tỷ lệ tử vong ở mức đó.
 
+Chỗ hẹp lại: Ít quốc gia có tỷ lệ tử vong tại mức đó.
+
+4. Các chấm đen (jitter):
+Mỗi chấm là dữ liệu của một quốc gia. Chúng thể hiện các giá trị thực tế.
+
+Nhờ vậy bạn có thể vừa thấy phân bố mật độ, vừa thấy các giá trị cụ thể.
+
+📊 Phân tích ví dụ từ biểu đồ:
+Africa: Phân phối lệch phải (right-skewed), nhiều quốc gia có tỷ lệ tử vong thấp (~1–2%), một số quốc gia có giá trị cao hơn ~7–8%.
+
+Europe: Trải rộng hơn, có vẻ như tỷ lệ tử vong phân bố từ khoảng 1% đến hơn 7%, mật độ dày hơn ở khoảng giữa.
+
+Western Pacific: Phân phối khá hẹp, nhiều quốc gia có tỷ lệ tử vong rất thấp.
+
+Eastern Mediterranean và Americas: Tỷ lệ tử vong đa dạng và có mật độ phân phối đều ở nhiều mức.
+
+South-East Asia: Có tỷ lệ tử vong nhìn chung khá thấp.
+
+✅ 2. Diễn giải kết quả kiểm định ANOVA
+Sau khi chạy ANOVA bằng aov(Mortality_Rate ~ WHO Region, data = anova_data):
+
+Kết quả bạn sẽ quan tâm:
+p-value (Pr(>F)): Đây là giá trị then chốt để đánh giá sự khác biệt.
+
+Diễn giải:
+Nếu p-value < 0.05: Có ý nghĩa thống kê ⇒ ít nhất một khu vực có tỷ lệ tử vong trung bình khác biệt so với phần còn lại.
+
+Nếu p-value ≥ 0.05: Không có bằng chứng đủ mạnh để kết luận sự khác biệt đáng kể.
