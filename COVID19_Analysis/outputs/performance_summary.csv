@@ -1,6 +1,0 @@
-"Model","Metric","Value"
-"Hồi quy Tuyến tính","RMSE",0.48
-"Phân loại (Logistic)","Accuracy",0.75
-"Chuỗi Thời gian (ARIMA)","MAPE",412357.06
-"Phân cụm (K-Means)","Silhouette Score",0.79
-"Tỷ lệ Tăng Ca Nhiễm","Average Increase Rate (%)",NA
