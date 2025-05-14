@@ -9,46 +9,64 @@ Cài đặt các gói cần thiết;
 Load các thư viện
 
 ```{r}
+# Cài đặt thư viện
+install.packages("tidyverse")
+install.packages("data.table")
+install.packages("lubridate")
+install.packages("corrplot")
+install.packages("leaflet")
+install.packages("maps")
+install.packages("gridExtra")
+install.packages("factoextra")
+install.packages("plotly")
+install.packages("caret")
+install.packages("cluster")
+install.packages("e1071")
+install.packages("randomForest")
+install.packages("forecast")
+install.packages("deSolve")
+install.packages("boot")
+install.packages("knitr")
+
 # Xử lý dữ liệu
-library(tidyverse)    # Bao gồm dplyr, ggplot2, tidyr, readr,...
-library(data.table)   # Xử lý dữ liệu nhanh
-library(readr)        # Đọc dữ liệu (đã nằm trong tidyverse, nhưng có thể giữ riêng nếu cần dùng riêng lẻ)
+library(tidyverse)    # Gồm dplyr, ggplot2, readr, tidyr, tibble,...
+library(data.table)   # Xử lý nhanh dữ liệu lớn
+library(readr)        # Đọc dữ liệu (cũng nằm trong tidyverse)
+library(tibble)       # Khung dữ liệu nâng cao (trong tidyverse)
+library(dplyr)        # Xử lý dữ liệu (cũng nằm trong tidyverse)
 
 # Xử lý ngày tháng
 library(lubridate)
 # Trực quan hóa
-library(ggplot2)      # Đã nằm trong tidyverse
+library(ggplot2)      # Biểu đồ cơ bản (trong tidyverse)
 library(plotly)       # Biểu đồ tương tác
 library(corrplot)     # Ma trận tương quan
 library(leaflet)      # Bản đồ tương tác
 library(maps)         # Bản đồ tĩnh
 library(gridExtra)    # Sắp xếp nhiều biểu đồ
-library(factoextra)   # Trực quan hóa phân tích đa biến (PCA, clustering,...)
+library(factoextra)   # Trực quan hóa PCA, clustering,...
+
 # Học máy và thống kê
 
 library(caret)        # Học máy tổng quát
-library(cluster)      # Phân cụm
+library(cluster)      # Phân cụm (K-means, PAM, hier clustering,...)
 library(e1071)        # SVM, Naive Bayes,...
-library(randomForest) # Mô hình rừng ngẫu nhiên
+library(randomForest) # Rừng ngẫu nhiên
 library(forecast)     # Dự báo chuỗi thời gian
-
-#SIR
-library(deSolve)
-library(boot)
-
+library(boot)         # Bootstrap
+library(broom)        # Chuyển model thành data frame
+library(deSolve)      # Mô hình SIR, hệ phương trình vi phân
 # Báo cáo
 library(knitr)        # Hiển thị bảng đẹp trong báo cáo
-library(htmlwidgets)
 ```
 
 Đọc dữ liệu & xem cấu trúc file
 ```{r}
-covid_19_clean_complete<-read_csv('Data/covid_19_clean_complete.csv')
-
-worldometer <- read_csv("Data/worldometer_data.csv")
-data <- read.csv("Data/day_wise.csv")
+covid_19_clean_complete<-read_csv('../data/covid_19_clean_complete.csv')
+worldometer <- read_csv("../data/worldometer_data.csv")
+data <- read.csv("../data/day_wise.csv")
 str(worldometer)
-str(covid_clean)
+str(covid_19_clean_complete)
 # Xem cấu trúc dữ liệu
 glimpse(covid_19_clean_complete)
 # Kiểm tra cấu trúc dữ liệu
@@ -63,7 +81,7 @@ sum(is.na(data))
 
 # Kiểm tra giá trị thiếu
 missing_worldometer <- colSums(is.na(worldometer))
-missing_covid_clean <- colSums(is.na(covid_clean))
+missing_covid_clean <- colSums(is.na(covid_19_clean_complete))
 
 # Hiển thị dưới dạng bảng
 kable(missing_worldometer, caption = "Giá trị thiếu trong worldometer_data")
@@ -118,6 +136,13 @@ if (any(is.na(worldometer_model))) {
   stop("Dữ liệu vẫn chứa NA. Vui lòng kiểm tra lại.")
 }
 
+# Xử lý dữ liệu thiếu cho cột Province/State
+covid_19_clean_complete <- covid_19_clean_complete %>% 
+  mutate(`Province/State` = ifelse(is.na(`Province/State`), "Unknown", `Province/State`))
+
+# Chuyển đổi kiểu dữ liệu ngày tháng
+covid_19_clean_complete <- covid_19_clean_complete %>% 
+  mutate(Date = as.Date(Date))
 ```
 
 Chức năng 1: Phân tích
@@ -134,7 +159,7 @@ daily_summary <- covid_19_clean_complete %>%
     Total_Active = sum(Active, na.rm = TRUE)
   )
 # Hiển thị biểu đồ tổng quan
-p <-ggplot(daily_summary, aes(x = Date)) +
+ggplot(daily_summary, aes(x = Date)) +
   geom_line(aes(y = Total_Confirmed, color = "Confirmed"), size = 1) +
   geom_line(aes(y = Total_Deaths, color = "Deaths"), size = 1) +
   geom_line(aes(y = Total_Recovered, color = "Recovered"), size = 1) +
@@ -144,7 +169,6 @@ p <-ggplot(daily_summary, aes(x = Date)) +
        y = "Number of Cases", 
        color = "Case Type") +
   theme_minimal()
-ggsave("outputs/plots/covid_cases_over_time.png", plot = p, width = 10, height = 6, dpi = 300)
 ```
   1.2. Phân tích theo quốc gia/khu vực
 ```{r}
@@ -158,9 +182,8 @@ top_countries <- covid_19_clean_complete %>%
   ) %>% 
   arrange(desc(Total_Confirmed)) %>% 
   head(10)
-# Xuất bảng top 10 quốc gia ra file CSV
-write.csv(top_countries, file = "outputs/top_10_countries.csv", row.names = FALSE)
-png("outputs/plots/top_10_countries_plot.png", width = 800, height = 600)
+top_countries
+
 # Biểu đồ cột cho top 10 quốc gia
 ggplot(top_countries, aes(x = reorder(`Country/Region`, -Total_Confirmed), y = Total_Confirmed)) +
   geom_col(fill = "steelblue") +
@@ -182,7 +205,8 @@ country_stats <- covid_19_clean_complete %>%
   ) %>% 
   filter(Confirmed > 1000) %>% 
   arrange(desc(Mortality_Rate))
-write.csv(country_stats, file = "outputs/mortality_rate_by_country.csv", row.names = FALSE)
+
+head(country_stats)
 ```
 1.3.Phân tích theo khu vực WHO với Mortality_Rate(tỉ lệ tử vong)=(Deaths/Confirmed)x100
 ```{r}
@@ -196,12 +220,12 @@ who_region_stats <- covid_19_clean_complete %>%
     Mortality_Rate = ifelse(Confirmed > 0, Deaths/Confirmed * 100, 0)
   ) %>% 
   arrange(desc(Confirmed))
-write.csv(who_region_stats, file = "outputs/who_region_stats.csv", row.names = FALSE)
+who_region_stats
 
- #Biểu đồ tròn cho phân bố ca nhiễm theo khu vực
-chart <- plot_ly(who_region_stats, labels = ~`WHO Region`, values = ~Confirmed, type = 'pie') %>%
-  layout(title = 'Distribution of COVID-19 Cases by WHO Region')
-saveWidget(chart, "outputs/plots/who_region_pie_chart.html")
+# Biểu đồ tròn cho phân bố ca nhiễm theo khu vực
+if (!exists("who_region_stats")) stop("who_region_stats không tồn tại. Kiểm tra bước tạo dữ liệu.")
+plot_ly(who_region_stats, labels = ~`WHO Region`, values = ~Confirmed, type = 'pie') %>%
+  layout(title_text = 'Distribution of COVID-19 Cases by WHO Region')
 ```
 
  
@@ -300,7 +324,7 @@ outlier_values <- outlier_result$outliers
 
 # Kiểm tra kết quả
 print(paste("Số lượng ngoại lệ:", nrow(outlier_values)))
-p <- ggplot(anova_clean, aes(x = `WHO Region`, y = Mortality_Rate, fill = `WHO Region`)) +
+ggplot(anova_clean, aes(x = `WHO Region`, y = Mortality_Rate, fill = `WHO Region`)) +
   geom_violin(alpha = 0.6) +  # Violin Plot với độ trong suốt 0.6
   geom_jitter(width = 0.2, alpha = 0.5, color = "black") +  # Jitter cho các điểm
   labs(title = "Distribution of Mortality Rate by WHO Region",
@@ -309,75 +333,113 @@ p <- ggplot(anova_clean, aes(x = `WHO Region`, y = Mortality_Rate, fill = `WHO R
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")  # Tắt hiển thị legend
-ggsave("outputs/plots/mortality_violin_plot.png", plot = p, width = 10, height = 6, dpi = 300)
 ```
+🔍 Cách đọc biểu đồ Violin Plot:
+1. Trục hoành (X-axis):
+Gồm các khu vực của Tổ chức Y tế Thế giới (WHO Region): Africa, Americas, Eastern Mediterranean, Europe, South-East Asia, Western Pacific.
+
+2. Trục tung (Y-axis):
+Biểu thị tỷ lệ tử vong (%) = (Deaths / Confirmed) × 100 của từng quốc gia thuộc mỗi khu vực.
+
+3. Hình dáng "Violin":
+Hình dạng của mỗi violin biểu thị mật độ phân phối của dữ liệu:
+
+Chỗ phình to: Nơi có nhiều quốc gia có tỷ lệ tử vong ở mức đó.
+
+Chỗ hẹp lại: Ít quốc gia có tỷ lệ tử vong tại mức đó.
+
+4. Các chấm đen (jitter):
+Mỗi chấm là dữ liệu của một quốc gia. Chúng thể hiện các giá trị thực tế.
+
+Nhờ vậy bạn có thể vừa thấy phân bố mật độ, vừa thấy các giá trị cụ thể.
+
+📊 Phân tích ví dụ từ biểu đồ:
+Africa: Phân phối lệch phải (right-skewed), nhiều quốc gia có tỷ lệ tử vong thấp (~1–2%), một số quốc gia có giá trị cao hơn ~7–8%.
+
+Europe: Trải rộng hơn, có vẻ như tỷ lệ tử vong phân bố từ khoảng 1% đến hơn 7%, mật độ dày hơn ở khoảng giữa.
+
+Western Pacific: Phân phối khá hẹp, nhiều quốc gia có tỷ lệ tử vong rất thấp.
+
+Eastern Mediterranean và Americas: Tỷ lệ tử vong đa dạng và có mật độ phân phối đều ở nhiều mức.
+
+South-East Asia: Có tỷ lệ tử vong nhìn chung khá thấp.
+
+✅ 2. Diễn giải kết quả kiểm định ANOVA
+Sau khi chạy ANOVA bằng aov(Mortality_Rate ~ WHO Region, data = anova_data):
+
+Kết quả bạn sẽ quan tâm:
+p-value (Pr(>F)): Đây là giá trị then chốt để đánh giá sự khác biệt.
+
+Diễn giải:
+Nếu p-value < 0.05: Có ý nghĩa thống kê ⇒ ít nhất một khu vực có tỷ lệ tử vong trung bình khác biệt so với phần còn lại.
+
+Nếu p-value ≥ 0.05: Không có bằng chứng đủ mạnh để kết luận sự khác biệt đáng kể.
+- Phân tích xu hướng số ca nhiễm toàn cầu theo thời gian trong covid_clean
+
+
+
 Chức năng 2 : Dự đoán
 2.1 Dự đoán Số ca Tử vong theo phương pháp hồi quy
 - Dự đoán số ca tử vong giúp các quốc gia chuẩn bị giường bệnh, máy thở, và nguồn lực y tế.
 ```{r}
-
-
-# Chia dữ liệu train/test
+# 2. Đặt seed và chia dữ liệu
 set.seed(123)
 trainIndex <- createDataPartition(worldometer_model$TotalDeaths, p = 0.8, list = FALSE)
 train_data <- worldometer_model[trainIndex, ]
 test_data <- worldometer_model[-trainIndex, ]
 
-# Xây dựng mô hình hồi quy tuyến tính
-# In kết quả thống kê từ mô hình
+# 3. Huấn luyện mô hình hồi quy tuyến tính
+model_lm <- train(
+  TotalDeaths ~ .,  # Thay bằng công thức phù hợp nếu cần loại biến không mong muốn
+  data = train_data,
+  method = "lm"
+)
+
+# 4. Thống kê kết quả mô hình
 cat("Mô hình hồi quy tuyến tính:\n")
 cat("-----------------------------------------------------\n")
 cat("1. R² (Tỷ lệ giải thích biến thiên của mô hình): ", summary(model_lm$finalModel)$r.squared, "\n")
 cat("2. R² điều chỉnh: ", summary(model_lm$finalModel)$adj.r.squared, "\n")
 
-# Tóm tắt các hệ số của mô hình và ý nghĩa p-value
+# 5. Tóm tắt các hệ số của mô hình và ý nghĩa thống kê
 model_summary <- tidy(model_lm$finalModel)
-library(broom)
 cat("3. Các hệ số của mô hình và ý nghĩa:\n")
-for(i in 1:nrow(model_summary)) {
+for (i in 1:nrow(model_summary)) {
   coef_name <- model_summary$term[i]
   coef_value <- model_summary$estimate[i]
   std_error <- model_summary$std.error[i]
   t_value <- model_summary$statistic[i]
   p_value <- model_summary$p.value[i]
   
-  # Xuất thông tin cho từng hệ số
   cat(sprintf("- Hệ số %s: %.3f (Std. Error: %.3f, t-value: %.3f, p-value: %.4f)\n", 
               coef_name, coef_value, std_error, t_value, p_value))
   
-  # Giải thích p-value
   if (p_value < 0.05) {
     cat("  => Hệ số này có ý nghĩa thống kê ở mức alpha = 0.05.\n")
   } else {
     cat("  => Hệ số này không có ý nghĩa thống kê ở mức alpha = 0.05.\n")
   }
 }
-# Dự đoán và đánh giá
-predictions <- predict(model_lm, test_data)
-results <- postResample(predictions, test_data$TotalDeaths)
 
-# Hiển thị kết quả
-print("Kết quả mô hình:")
+# 6. Dự đoán trên tập test
+predictions <- predict(model_lm, test_data)
+
+# 7. Đánh giá mô hình
+results <- postResample(predictions, test_data$TotalDeaths)
+cat("4. Đánh giá mô hình:\n")
 print(results)
 
-# Lưu biểu đồ với nền trắng
-# Mở thiết bị đồ họa PNG
-png("outputs/actual_vs_predicted.png", width = 800, height = 600)
-
-# Vẽ biểu đồ
+# 8. Vẽ biểu đồ thực tế vs dự đoán
 plot(test_data$TotalDeaths, predictions, 
      main = "Thực tế vs Dự đoán",
      xlab = "Tổng số ca tử vong thực tế", 
      ylab = "Tổng số ca tử vong dự đoán",
-     col = "black", 
-     pch = 19,       
-     col.main = "black",  
-     col.lab = "black",   
-     col.axis = "black")  
+     col = "black",  # Màu điểm
+     pch = 19,
+     col.main = "black",
+     col.lab = "black",
+     col.axis = "black")
 abline(0, 1, col = "red")
-
-# Đóng thiết bị PNG
-dev.off()
 ```
 
 2.2 Phân loại mức độ nghiêm trọng giúp xác định các quốc gia cần hỗ trợ y tế khẩn cấp.
@@ -415,16 +477,34 @@ confusionMatrix(predictions, test_data$Severity)
 # Lưu biểu đồ ROC (nếu cần)
 library(pROC)
 roc_obj <- roc(test_data$Severity, as.numeric(predictions))
-png("outputs/plots/roc_curve.png")
+png("../outputs/plots/roc_curve.png")
 plot(roc_obj, main = "Đường ROC cho mô hình phân loại")
 dev.off()
 ```
 
 2.3 Chuỗi thời gian (Arinma)
-```{r}
-# Kiểm tra dữ liệu
-if (!exists("global_trend")) stop("global_trend không tồn tại. Chạy chunk eda_time_series trước")
-if (any(is.na(global_trend$TotalConfirmed))) stop("Dữ liệu TotalConfirmed chứa NA")
+
+
+```{r time_series_analysis}
+# Phân tích chuỗi thời gian và dự đoán ARIMA
+print("Running chunk time_series_analysis")
+# Kiểm tra gói forecast và ggplot2
+if (!require(forecast)) {
+  install.packages("forecast")
+  library(forecast)
+}
+if (!require(ggplot2)) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+# Kiểm tra dữ liệu global_trend
+if (!exists("global_trend")) {
+  stop("global_trend không tồn tại. Chạy chunk eda_time_series trước.")
+}
+if (any(is.na(global_trend$TotalConfirmed))) {
+  stop("Dữ liệu TotalConfirmed chứa NA.")
+}
 
 # Tạo dữ liệu chuỗi thời gian
 ts_data <- ts(pmax(global_trend$TotalConfirmed, 0), frequency = 365)
@@ -445,15 +525,15 @@ forecast_df <- data.frame(
 )
 
 p1 <- ggplot(forecast_df, aes(x = Time, y = Cases, color = Type)) +
-  geom_line(size = 1) +
+  geom_line(linewidth = 1) +
   geom_ribbon(aes(ymin = Lower, ymax = Upper), fill = "blue", alpha = 0.2, color = NA) +
-  scale_color_manual(values = c("Thực tế" = "#333333", "Dự đoán" = "#1E90FF")) + # Màu xám đậm và xanh dương
+  scale_color_manual(values = c("Thực tế" = "#333333", "Dự đoán" = "#1E90FF")) +
   labs(title = "Dự đoán Số ca Nhiễm COVID-19 (ARIMA)",
        subtitle = "Dữ liệu thực tế và dự đoán 30 ngày",
        x = "Thời gian (năm)", y = "Tổng số ca nhiễm") +
   theme_minimal(base_family = "Arial") +
   theme(
-    plot.background = element_rect(fill = "white", color = NA), # Nền trắng
+    plot.background = element_rect(fill = "white", color = NA),
     panel.background = element_rect(fill = "white", color = NA),
     legend.position = "top",
     plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
@@ -461,7 +541,8 @@ p1 <- ggplot(forecast_df, aes(x = Time, y = Cases, color = Type)) +
     axis.text = element_text(size = 10),
     axis.title = element_text(size = 12)
   )
-ggsave("outputs/plots/arima_forecast.png", p1, width = 10, height = 6, dpi = 300, bg = "white")
+
+ggsave("../outputs/plots/arima_forecast.png", p1, width = 10, height = 6, dpi = 300, bg = "white")
 
 # 2. Biểu đồ residuals
 residuals_df <- data.frame(
@@ -470,7 +551,7 @@ residuals_df <- data.frame(
 )
 
 p2 <- ggplot(residuals_df, aes(x = Time, y = Residuals)) +
-  geom_line(color = "#FF4500", size = 1) + # Màu cam đỏ
+  geom_line(color = "#FF4500", linewidth = 1) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "#333333") +
   labs(title = "Residuals của Mô hình ARIMA",
        subtitle = "Sai số giữa giá trị thực tế và dự đoán",
@@ -484,7 +565,8 @@ p2 <- ggplot(residuals_df, aes(x = Time, y = Residuals)) +
     axis.text = element_text(size = 10),
     axis.title = element_text(size = 12)
   )
-ggsave("outputs/plots/arima_residuals.png", p2, width = 10, height = 6, dpi = 300, bg = "white")
+
+ggsave("../outputs/plots/arima_residuals.png", p2, width = 10, height = 6, dpi = 300, bg = "white")
 
 # 3. Biểu đồ ACF
 acf_data <- acf(residuals(model_arima), plot = FALSE)
@@ -494,10 +576,10 @@ acf_df <- data.frame(
 )
 
 p3 <- ggplot(acf_df, aes(x = Lag, y = ACF)) +
-  geom_segment(aes(xend = Lag, yend = 0), color = "#1E90FF", size = 1) + # Màu xanh dương
+  geom_segment(aes(xend = Lag, yend = 0), color = "#1E90FF", linewidth = 1) +
   geom_hline(yintercept = 0, color = "#333333") +
   geom_hline(yintercept = c(-1.96/sqrt(length(ts_data)), 1.96/sqrt(length(ts_data))),
-             linetype = "dashed", color = "#FF4500") + # Màu cam đỏ cho vùng tin cậy
+             linetype = "dashed", color = "#FF4500") +
   labs(title = "Tự tương quan (ACF) của Residuals ARIMA",
        subtitle = "Kiểm tra tính ngẫu nhiên của residuals",
        x = "Độ trễ (Lag)", y = "ACF") +
@@ -510,7 +592,8 @@ p3 <- ggplot(acf_df, aes(x = Lag, y = ACF)) +
     axis.text = element_text(size = 10),
     axis.title = element_text(size = 12)
   )
-ggsave("outputs/plots/arima_acf.png", p3, width = 10, height = 6, dpi = 300, bg = "white")
+
+ggsave("../outputs/plots/arima_acf.png", p3, width = 10, height = 6, dpi = 300, bg = "white")
 
 # In tóm tắt mô hình
 print("Tóm tắt mô hình ARIMA:")
@@ -531,7 +614,7 @@ fviz_nbclust(cluster_data, kmeans, method = "wss") +
   labs(title = "Phương pháp Elbow để chọn số cụm")
 
 # Lưu với nền trắng
-ggsave("outputs/plots/elbow_plot.png", bg = "white")
+ggsave("../outputs/plots/elbow_plot.png", bg = "white")
 
 # Phân cụm K-Means với k=3 (giữ nguyên code gốc)
 set.seed(123)
@@ -549,7 +632,7 @@ pca_plot <- fviz_pca_ind(pca_data,
   labs(title = "Phân cụm quốc gia theo đặc điểm dịch bệnh (PCA)")
 
 # Lưu với nền trắng
-ggsave("outputs/plots/pca_clusters.png", pca_plot, bg = "white")
+ggsave("../outputs/plots/pca_clusters.png", pca_plot, bg = "white")
 
 # Tóm tắt số quốc gia mỗi cụm (giữ nguyên code gốc)
 print("Số quốc gia trong mỗi cụm:")
@@ -587,7 +670,7 @@ roc_plot <- ggroc(roc_obj, color = "#1c61b6") +
   annotate("text", x = 0.4, y = 0.1, label = paste("AUC =", round(auc_glm, 2))) +
   theme_minimal() +
   theme(plot.background = element_rect(fill = "white"))
-ggsave("outputs/plots/roc_curve_updated.png", roc_plot, bg = "white")
+ggsave("../outputs/plots/roc_curve_updated.png", roc_plot, bg = "white")
 
 # --- Phân cụm: Silhouette Score ---
 cluster_data <- worldometer_model %>% select(TotalCases, TotalDeaths, Population, TotalTests)
@@ -618,10 +701,10 @@ perf_plot <- ggplot(performance_summary, aes(x = Model, y = Value, fill = Metric
   theme_minimal() +
   theme(plot.background = element_rect(fill = "white"),
         panel.background = element_rect(fill = "white"))
-ggsave("outputs/plots/performance_comparison.png", perf_plot, bg = "white")
+ggsave("../outputs/plots/performance_comparison.png", perf_plot, bg = "white")
 
 # Lưu tóm tắt hiệu suất
-write_csv(performance_summary, "outputs/performance_summary.csv")
+write_csv(performance_summary, "../outputs/performance_summary.csv")
 ```
 
 Chức năng 3: Mô hình hóa tốc độ lây nhiễm và hồi phục bằng mô hình SIR (Susceptible – Infectious – Recovered)
@@ -683,20 +766,19 @@ beta <- mean(subset_data$beta_est, na.rm = TRUE)
 
 
 # Beta theo thời gian
-plot <-ggplot(subset_data, aes(x = Date)) +
+ggplot(subset_data, aes(x = Date)) +
   geom_line(aes(y = beta_est), color = "red") +
   labs(title = "Biến động hệ số lây nhiễm (β) theo thời gian",
        y = "β (beta)", x = "Ngày") +
   theme_minimal()
-ggsave("outputs/plots/beta_time_series.png",plot =plot, width = 8, height = 6)  # Lưu vào file PNG
 
 # Gamma theo thời gian
-plot <- ggplot(subset_data, aes(x = Date)) +
+ggplot(subset_data, aes(x = Date)) +
   geom_line(aes(y = gamma_est), color = "darkgreen") +
   labs(title = "Biến động hệ số hồi phục (γ) theo thời gian",
        y = "γ (gamma)", x = "Ngày") +
   theme_minimal()
-ggsave("outputs/plots/gamma_time_series.png",plot=plot, width = 8, height = 6)
+
 
 sir_model <- function(time, state, parameters) {
   with(as.list(c(state, parameters)), {
@@ -716,14 +798,14 @@ times <- 1:nrow(subset_data)
 out <- ode(y = init, times = times, func = sir_model, parms = parameters)
 out <- as.data.frame(out)
 
+library(ggplot2)
 
-plot <- ggplot() +
+ggplot() +
   geom_line(data = out, aes(x = time, y = I, color = "Mô hình")) +
   geom_line(data = subset_data, aes(x = 1:nrow(subset_data), y = I, color = "Thực tế")) +
   labs(title = "So sánh số ca nhiễm (I): mô hình vs thực tế", x = "Ngày", y = "Số ca") +
   scale_color_manual(values = c("Mô hình" = "red", "Thực tế" = "blue")) +
   theme_minimal()
-ggsave("outputs/plots/infection_comparison.png",plot =plot, width = 8, height = 6)
 ```
 3. Tính toán các chỉ số theo yêu cầu
 Tính tốc độ hồi phục trong khoảng thời gian
@@ -779,13 +861,12 @@ cat("Tỷ lệ tử vong trên hồi phục:", mean_death_per_recovered, "%\n")
 library(ggplot2)
 
 # Biểu đồ số ca mới theo ngày
-plot <- ggplot(data, aes(x = Date, y = New.cases)) +
+ggplot(data, aes(x = Date, y = New.cases)) +
   geom_line(color = "blue") +
   labs(title = "Số ca mới mỗi ngày", x = "Ngày", y = "Ca mới") +
   theme_minimal()
-ggsave("outputs/plots/new_cases_per_day.png", plot = plot, width = 8, height = 6)
-```
 
+```
 3.6 Kiểm định khoảng ước lượng
 ```{r}
 
@@ -809,5 +890,6 @@ boot_results
 boot.ci(boot_results, type = "perc", index = 1)  # CI cho beta
 boot.ci(boot_results, type = "perc", index = 2)  # CI cho gamma
 ```
+
 
 
