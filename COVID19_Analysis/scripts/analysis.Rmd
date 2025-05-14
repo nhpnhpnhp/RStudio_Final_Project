@@ -1,0 +1,639 @@
+---
+title: "Phân tích Dữ liệu COVID_19 - Machine learning"
+author: "Lưu Trần Kim Phú - 23133055"
+date: "2025-05-13"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+  pdf_document: default
+---   
+
+##1. Chuẩn bị dữ liệu
+```{r}
+# Cài đặt và tải thư viện
+install.packages("tidyverse")
+install.packages("caret")
+install.packages("ggplot2")
+install.packages("data.table")
+install.packages("corrplot")
+install.packages("lubridate")
+install.packages("cluster")
+install.packages("e1071")
+install.packages("randomForest")
+install.packages("readr")
+install.packages("knitr")
+install.packages("factoextra")
+install.packages("forecast")
+
+library(tidyverse)    # Xử lý và trực quan hóa dữ liệu
+library(caret)        # Học máy
+library(ggplot2)      # Vẽ biểu đồ
+library(data.table)   # Xử lý dữ liệu nhanh
+library(corrplot)     # Ma trận tương quan
+library(lubridate)    # Xử lý ngày tháng
+library(cluster)      # Phân cụm
+library(e1071)        # SVM
+library(randomForest) # Random Forest
+library(readr)
+library(knitr)
+library(factoextra)
+library(forecast)
+```
+**Phân tích**:
+- **Chức năng**:
+  - **Cài đặt gói** (`install.packages`): Cài các gói cần thiết nếu chưa có trên máy.
+    - `tidyverse`: Bộ công cụ xử lý dữ liệu (dplyr, tidyr) và trực quan hóa (ggplot2).
+    - `caret`: Hỗ trợ học máy (mô hình, đánh giá).
+    - `ggplot2`: Vẽ biểu đồ (histogram, đường cong).
+    - `data.table`: Xử lý dữ liệu lớn nhanh chóng.
+    - `corrplot`: Vẽ ma trận tương quan.
+    - `lubridate`: Xử lý ngày tháng.
+    - `cluster`: Phân cụm (K-Means, Hierarchical).
+    - `e1071`: Hỗ trợ SVM và các hàm thống kê.
+    - `randomForest`: Triển khai Random Forest.
+    - `readr`: Đọc tệp CSV nhanh (thuộc tidyverse).
+    - `knitr`: Tạo bảng đẹp với `kable()`.
+  - **Tải gói** (`library`): Kích hoạt các gói để sử dụng trong mã.
+- **Lý thuyết học máy**: Việc tải thư viện là bước chuẩn bị để triển khai các thuật toán học máy (hồi quy, phân loại, phân cụm) và xử lý dữ liệu.
+- **Ý nghĩa trong COVID-19**: Các thư viện như `tidyverse` giúp làm sạch dữ liệu dịch bệnh (thường thiếu hoặc không đồng nhất), `caret` và `randomForest` hỗ trợ dự đoán số ca tử vong, và `ggplot2` trực quan hóa xu hướng lây lan.
+- **Kết quả mong đợi**:
+  - Tất cả gói được cài đặt và tải mà không báo lỗi.
+  - Nếu gói đã cài, `install.packages` sẽ bỏ qua; `library` kích hoạt gói để sử dụng.
+- **Lưu ý**:
+  - **Không nên dùng `install.packages` trong RMarkdown**: Việc cài đặt gói trong mã có thể gây chậm hoặc lỗi khi knit, đặc biệt nếu chạy trên máy khác. Thay vào đó:
+    1. Cài đặt gói trước trong Console:
+       ```R
+       install.packages(c("tidyverse", "caret", "ggplot2", "data.table", "corrplot", "lubridate", "cluster", "e1071", "randomForest", "readr", "knitr"))
+
+#1.1. Tải và đọc dữ liệu đầu vào
+```{r}
+# Tải dữ liệu
+worldometer <- read_csv("../data/worldometer_data.csv")
+covid_clean <- read_csv("../data/covid_19_clean_complete.csv")
+
+# Xem cấu trúc dữ liệu
+str(worldometer)
+str(covid_clean)
+```
+
+**Phân tích**:
+- **Chức năng**:
+  - **`read_csv("../data/worldometer_data.csv")`**: Đọc tệp CSV từ thư mục `data/` (nằm ngoài thư mục `scripts/`).
+    - `worldometer`: Lưu dữ liệu vào biến dạng tibble (data frame).
+  - **Tương tự cho `covid_clean`**: Đọc `covid_19_clean_complete.csv`.
+  - **`str(worldometer)` và `str(covid_clean)`**: Hiển thị cấu trúc dữ liệu (tên cột, kiểu dữ liệu, vài giá trị đầu).
+- **Lý thuyết học máy**: Tải dữ liệu là bước đầu tiên trong quy trình học máy, cung cấp nguyên liệu cho phân tích. Kiểm tra cấu trúc giúp xác định các đặc trưng (features) và kiểu dữ liệu để xử lý tiếp.
+- **Ý nghĩa trong COVID-19**:
+  - `worldometer_data.csv`: Chứa số liệu tổng hợp theo quốc gia (như `TotalCases`, `TotalDeaths`, `Population`), giúp phân tích tình hình dịch bệnh toàn cầu.
+  - `covid_19_clean_complete.csv`: Chứa dữ liệu thời gian (như `Date`, `Confirmed`), phù hợp để phân tích xu hướng lây lan.
+  - Kiểm tra cấu trúc giúp phát hiện vấn đề sớm (như cột `Date` không đúng định dạng).
+- **Kết quả mong đợi**:
+  - `worldometer`: Có các cột như `Country/Region`, `TotalCases` (numeric), `TotalDeaths` (numeric), `Population` (numeric), `TotalTests` (numeric), `Continent` (character).
+  - `covid_clean`: Có các cột như `Province/State`, `Country/Region`, `Date` (character hoặc Date), `Confirmed` (numeric), `Deaths` (numeric), `Recovered` (numeric).
+  - Ví dụ đầu ra của `str(worldometer)`:
+#1.2. Kiểm tra giá trị thiếu
+```{r}
+# Kiểm tra giá trị thiếu
+missing_worldometer <- colSums(is.na(worldometer))
+missing_covid_clean <- colSums(is.na(covid_clean))
+
+# Hiển thị dưới dạng bảng
+kable(missing_worldometer, caption = "Giá trị thiếu trong worldometer_data")
+kable(missing_covid_clean, caption = "Giá trị thiếu trong covid_19_clean_complete")
+```
+  
+# 1.3 Chuẩn hóa Định dạng
+```{r}
+# Chuẩn hóa ngày tháng trong covid_clean
+covid_clean <- covid_clean %>%
+  mutate(Date = as_date(Date, format = "%Y-%m-%d"))
+
+# Đảm bảo cột số trong worldometer
+worldometer <- worldometer %>%
+  mutate(across(c(TotalCases, TotalDeaths, Population, TotalTests), as.numeric))
+
+# Kiểm tra lại
+summary(covid_clean$Date)
+summary(worldometer %>% select(TotalCases, TotalDeaths, Population, TotalTests))
+```
+
+**Phân tích**:
+
+- **Chức năng**:
+  - **Chuẩn hóa ngày tháng**:
+    - `covid_clean %>% mutate(Date = as_date(Date, format = "%Y-%m-%d"))`:
+      - `%>%`: Pipe operator từ `dplyr`, truyền dữ liệu `covid_clean` vào hàm tiếp theo.
+      - `mutate()`: Tạo hoặc sửa cột `Date`.
+      - `as_date(Date, format = "%Y-%m-%d")`: Chuyển cột `Date` (thường là chuỗi) thành kiểu `Date`, giả định định dạng `YYYY-MM-DD` (ví dụ: `2020-01-22`).
+      - Kết quả lưu lại vào `covid_clean`.
+  - **Đảm bảo cột số**:
+    - `worldometer %>% mutate(across(c(TotalCases, TotalDeaths, Population, TotalTests), as.numeric))`:
+      - `across()`: Áp dụng hàm `as.numeric()` cho các cột được liệt kê.
+      - `as.numeric()`: Chuyển các cột thành kiểu `numeric`, đảm bảo không có giá trị chuỗi hoặc yếu tố không mong muốn.
+      - Kết quả lưu lại vào `worldometer`.
+  - **Kiểm tra**:
+    - `summary(covid_clean$Date)`: Hiển thị tóm tắt cột `Date` (min, max, median).
+    - `summary(worldometer %>% select(...))`: Hiển thị tóm tắt (min, max, mean, median) cho các cột số.
+
+- **Lý thuyết Học máy**:
+  - Chuẩn hóa định dạng đảm bảo dữ liệu có kiểu phù hợp với các thuật toán học máy. Ví dụ, cột `Date` kiểu `Date` cần thiết cho phân tích thời gian, và cột số kiểu `numeric` cần thiết cho hồi quy hoặc phân loại.
+
+- **Ý nghĩa trong COVID-19**:
+  - Dữ liệu COVID-19 thường có định dạng không đồng nhất (như `Date` dạng chuỗi `2020/01/22` hoặc `01-22-2020`). Chuẩn hóa `Date` giúp phân tích xu hướng lây lan theo thời gian.
+  - Các cột như `TotalCases`, `TotalDeaths` cần là `numeric` để tính toán (như trung bình, tương quan) và đưa vào mô hình học máy.
+
+- **Kết quả mong đợi**:
+  - `summary(covid_clean$Date)`:
+
+##2. Phân tích Khám phá (EDA)
+#2.1 Phân phối Số ca Nhiễm/Tử vong
+```{r}
+# 1. Histogram số ca nhiễm
+p1 <- ggplot(worldometer, aes(x = TotalCases)) +
+  geom_histogram(binwidth = 10000, fill = "#1E90FF", color = "white", alpha = 0.9) + # Xanh dương, viền trắng
+  labs(title = "Phân phối Số ca Nhiễm COVID-19 Theo Quốc Gia",
+       subtitle = "Dữ liệu tổng hợp từ Worldometer",
+       x = "Tổng Số ca Nhiễm", y = "Số Quốc Gia") +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "grey80", size = 0.3),
+    panel.grid.minor = element_line(color = "grey90", size = 0.1),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)
+  ) +
+  scale_x_continuous(labels = scales::comma) + # Định dạng số lớn (thêm dấu phẩy)
+  scale_y_continuous(expand = c(0, 0)) # Bắt đầu từ 0
+
+ggsave("../outputs/plots/histogram_cases.png", p1, width = 8, height = 5, dpi = 300, bg = "white")
+```
+**Phân tích**:
+
+- **Chức năng**:
+  - **Histogram số ca nhiễm**:
+    - `ggplot(worldometer, aes(x = TotalCases))`: Khởi tạo biểu đồ với dữ liệu `worldometer`, trục x là `TotalCases`.
+    - `geom_histogram(binwidth = 10000)`: Vẽ histogram với độ rộng bin 10,000 ca.
+    - `fill = "blue", alpha = 0.7`: Màu xanh, độ trong suốt 70% để dễ nhìn.
+    - `labs(title = "...", x = "...", y = "...")`: Đặt tiêu đề và nhãn trục.
+    - `theme_minimal()`: Giao diện đơn giản, gọn gàng.
+    - `ggsave("../outputs/plots/histogram_cases.png")`: Lưu biểu đồ vào `outputs/plots/`.
+  - **Histogram số ca tử vong**: Tương tự, nhưng dùng `TotalDeaths`, binwidth 1,000, màu đỏ.
+  - **Chú ý**: Không có `ggsave()` cho histogram tử vong (có thể là thiếu).
+
+- **Lý thuyết Học máy**:
+  - Histogram thuộc phân tích khám phá dữ liệu (EDA), giúp hiểu phân phối của biến mục tiêu (như `TotalCases`, `TotalDeaths`). Phân phối lệch (skewed) có thể yêu cầu biến đổi dữ liệu (như log) trước khi đưa vào mô hình.
+
+- **Ý nghĩa trong COVID-19**:
+  - Phân phối số ca nhiễm/tử vong cho thấy mức độ nghiêm trọng giữa các quốc gia. Ví dụ, nhiều quốc gia có số ca thấp, nhưng một số ít (như Mỹ, Ấn Độ) có số ca rất cao, là các “outliers” cần chú ý.
+  - Hỗ trợ xác định mục tiêu phân tích (như dự đoán số ca tử vong ở quốc gia có ca nhiễm cao).
+
+- **Kết quả mong đợi**:
+  - **Histogram số ca nhiễm**:
+    - Trục x: Số ca nhiễm (0 đến hàng triệu).
+    - Trục y: Số quốc gia.
+    - Phân phối lệch phải (right-skewed): Nhiều quốc gia có ít ca (<100,000), một số ít có hàng triệu ca.
+    - Lưu vào `histogram_cases.png` (ví dụ: biểu đồ màu xanh, các cột tập trung bên trái).
+  - **Histogram số ca tử vong**:
+    - Tương tự, phân phối lệch phải: Nhiều quốc gia có ít tử vong (<10,000), một số ít có hàng chục nghìn.
+    - Không lưu tệp (do thiếu `ggsave()`).
+  - **Diễn giải**: Các quốc gia có số ca nhiễm/tử vong cao (như Mỹ) cần được ưu tiên phân tích để hiểu nguyên nhân (dân số, xét nghiệm, chính sách).
+#2.2 Ma trận Tương quan
+
+- Phân tích mối quan hệ giữa các biến số trong worldometer.
+```{r}
+# Chọn cột số
+numeric_cols <- worldometer %>% select_if(is.numeric)
+
+# Tính ma trận tương quan
+cor_matrix <- cor(numeric_cols, use = "complete.obs")
+
+# Vẽ ma trận tương quan
+corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.8)
+png("../outputs/plots/correlation_matrix.png")
+corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.8)
+dev.off()
+```
+
+#2.3 Xu hướng Thời gian
+- Phân tích xu hướng số ca nhiễm toàn cầu theo thời gian trong covid_clean
+```{r}
+# Tổng hợp số ca nhiễm theo ngày
+global_trend <- covid_clean %>%
+  group_by(Date) %>%
+  summarise(TotalConfirmed = sum(Confirmed, na.rm = TRUE))
+
+# Vẽ biểu đồ xu hướng với các tùy chỉnh
+ggplot(global_trend, aes(x = Date, y = TotalConfirmed)) +
+  geom_line(color = "steelblue", size = 1) +  # Đường kẻ màu xanh đậm, dày hơn
+  geom_point(color = "steelblue", size = 1.5, alpha = 0.6) +  # Thêm điểm dữ liệu
+  labs(title = "Xu hướng ca nhiễm COVID-19 toàn cầu",
+       x = "Ngày", 
+       y = "Tổng số ca nhiễm") +
+  theme_minimal(base_size = 12) +  # Cỡ chữ cơ bản
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),  # Canh giữa tiêu đề
+    axis.title = element_text(face = "bold"),  # Nhãn trục in đậm
+    panel.grid.minor = element_blank(),  # Bỏ đường lưới phụ
+    panel.background = element_rect(fill = "white"),  # Nền trắng
+    plot.background = element_rect(fill = "white")  # Nền trắng cho toàn bộ biểu đồ
+  ) +
+  scale_y_continuous(labels = scales::comma)  # Định dạng số trên trục y
+
+# Lưu biểu đồ với chất lượng cao
+ggsave("../outputs/plots/time_series.png", 
+       width = 10, 
+       height = 6, 
+       dpi = 300, 
+       bg = "white")
+```
+
+##3. Tiền xử lý
+#3.1 Xử lý Giá trị Thiếu
+
+- Điền giá trị thiếu trong worldometer bằng trung bình.
+```{r}
+# 3.1 Xử lý Giá trị Thiếu
+# Điền giá trị thiếu
+worldometer <- worldometer %>%
+  mutate(across(where(is.numeric), ~ifelse(is.na(.), mean(., na.rm = TRUE), .))) %>%
+  mutate(Continent = ifelse(is.na(Continent), "Unknown", Continent))
+
+# Kiểm tra lại
+kable(colSums(is.na(worldometer)), caption = "Giá trị thiếu sau xử lý")
+```
+
+#3.2 Chuẩn hóa (Scaling)
+
+- Chuẩn hóa các cột số trong worldometer về trung bình 0 và độ lệch chuẩn 1.
+```{r}
+preprocess_params <- preProcess(worldometer %>% select_if(is.numeric),
+                               method = c("center", "scale"))
+worldometer_scaled <- predict(preprocess_params, worldometer)
+summary(worldometer_scaled %>% select(TotalCases, TotalDeaths, Population, TotalTests))
+```
+#3.3 Mã hóa Biến Hạng mục
+
+- Mã hóa cột Continent trong worldometer (nếu có) thành số.
+```{r}
+worldometer_scaled <- worldometer_scaled %>%
+  mutate(Continent = as.factor(Continent)) %>%
+  mutate(Continent = as.numeric(Continent))
+summary(worldometer_scaled$Continent)
+```
+#3.4 Chọn Đặc trưng
+- Chọn các đặc trưng quan trọng cho mô hình học máy.
+```{r}
+worldometer_model <- worldometer_scaled %>%
+  select(TotalCases, TotalDeaths, Population, TotalTests, Continent)
+str(worldometer_model)
+```
+
+## 4. Mô hình Học máy
+# 4.1 Hồi quy (Dự đoán Số ca Tử vong)
+- Dự đoán số ca tử vong giúp các quốc gia chuẩn bị giường bệnh, máy thở, và nguồn lực y tế.
+```{r}
+library(caret)
+
+# Kiểm tra NA
+print("Giá trị thiếu trong worldometer_model:")
+kable(colSums(is.na(worldometer_model)), caption = "Giá trị thiếu trước mô hình")
+
+# Điền NA (nếu còn)
+worldometer_model <- worldometer_model %>%
+  mutate(across(where(is.numeric), ~ifelse(is.na(.), mean(., na.rm = TRUE), .))) %>%
+  mutate(Continent = ifelse(is.na(Continent), 
+                            names(sort(table(Continent), decreasing = TRUE))[1], 
+                            Continent))
+
+# Kiểm tra lại
+if (any(is.na(worldometer_model))) {
+  stop("Dữ liệu vẫn chứa NA. Vui lòng kiểm tra lại.")
+}
+
+# Chia dữ liệu train/test
+set.seed(123)
+trainIndex <- createDataPartition(worldometer_model$TotalDeaths, p = 0.8, list = FALSE)
+train_data <- worldometer_model[trainIndex, ]
+test_data <- worldometer_model[-trainIndex, ]
+
+# Xây dựng mô hình hồi quy tuyến tính
+model_lm <- train(TotalDeaths ~ TotalCases + Population + TotalTests + Continent,
+                  data = train_data,
+                  method = "lm")
+
+# Dự đoán và đánh giá
+predictions <- predict(model_lm, test_data)
+results <- postResample(predictions, test_data$TotalDeaths)
+
+# Hiển thị kết quả
+print("Kết quả mô hình:")
+print(results)
+
+# Lưu biểu đồ với nền trắng
+png("../outputs/plots/model_performance.png", bg = "white")
+plot(test_data$TotalDeaths, predictions, 
+     main = "Thực tế vs Dự đoán",
+     xlab = "Tổng số ca tử vong thực tế", 
+     ylab = "Tổng số ca tử vong dự đoán",
+     col = "black",  # Màu điểm
+     pch = 19,       # Hình dạng điểm
+     col.main = "black",  # Màu tiêu đề
+     col.lab = "black",   # Màu nhãn trục
+     col.axis = "black")  # Màu trục
+abline(0, 1, col = "red")
+dev.off()
+```
+
+#4.2 Phân loại (Phân loại Mức độ Nghiêm trọng)
+- Phân loại mức độ nghiêm trọng giúp xác định các quốc gia cần hỗ trợ y tế khẩn cấp.
+```{r}
+# Tạo biến mục tiêu
+worldometer_model <- worldometer_model %>%
+  mutate(Severity = as.factor(ifelse(TotalDeaths > median(TotalDeaths, na.rm = TRUE), "High", "Low")))
+
+# Kiểm tra phân phối lớp
+print("Phân phối lớp Severity:")
+table(worldometer_model$Severity)
+
+# Biến đổi đặc trưng (giảm tách biệt)
+worldometer_model <- worldometer_model %>%
+  mutate(LogTotalCases = log1p(TotalCases))
+
+# Chia dữ liệu train/test
+set.seed(123)
+trainIndex <- createDataPartition(worldometer_model$Severity, p = 0.8, list = FALSE)
+train_data <- worldometer_model[trainIndex, ]
+test_data <- worldometer_model[-trainIndex, ]
+
+# Mô hình glmnet (có điều chuẩn)
+model_glm <- train(Severity ~ LogTotalCases + Population + TotalTests + Continent,
+                   data = train_data,
+                   method = "glmnet",
+                   family = "binomial",
+                   trControl = trainControl(method = "cv", number = 5, sampling = "up"))
+
+# Dự đoán và đánh giá
+predictions <- predict(model_glm, test_data)
+print("Ma trận nhầm lẫn:")
+confusionMatrix(predictions, test_data$Severity)
+
+# Lưu biểu đồ ROC (nếu cần)
+library(pROC)
+roc_obj <- roc(test_data$Severity, as.numeric(predictions))
+png("../outputs/plots/roc_curve.png")
+plot(roc_obj, main = "Đường ROC cho mô hình phân loại")
+dev.off()
+```
+
+#4.3 Chuỗi thời gian (Arinma)
+```{r}
+# Kiểm tra dữ liệu
+if (!exists("global_trend")) stop("global_trend không tồn tại. Chạy chunk eda_time_series trước")
+if (any(is.na(global_trend$TotalConfirmed))) stop("Dữ liệu TotalConfirmed chứa NA")
+
+# Tạo dữ liệu chuỗi thời gian
+ts_data <- ts(pmax(global_trend$TotalConfirmed, 0), frequency = 365)
+
+# Mô hình ARIMA
+model_arima <- auto.arima(ts_data, stepwise = TRUE, approximation = FALSE)
+
+# Dự đoán 30 ngày
+forecast_arima <- forecast(model_arima, h = 30)
+
+# 1. Biểu đồ dự đoán
+forecast_df <- data.frame(
+  Time = c(time(ts_data), time(forecast_arima$mean)),
+  Cases = c(as.numeric(ts_data), as.numeric(forecast_arima$mean)),
+  Lower = c(rep(NA, length(ts_data)), as.numeric(forecast_arima$lower[, 2])),
+  Upper = c(rep(NA, length(ts_data)), as.numeric(forecast_arima$upper[, 2])),
+  Type = c(rep("Thực tế", length(ts_data)), rep("Dự đoán", length(forecast_arima$mean)))
+)
+
+p1 <- ggplot(forecast_df, aes(x = Time, y = Cases, color = Type)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = Lower, ymax = Upper), fill = "blue", alpha = 0.2, color = NA) +
+  scale_color_manual(values = c("Thực tế" = "#333333", "Dự đoán" = "#1E90FF")) + # Màu xám đậm và xanh dương
+  labs(title = "Dự đoán Số ca Nhiễm COVID-19 (ARIMA)",
+       subtitle = "Dữ liệu thực tế và dự đoán 30 ngày",
+       x = "Thời gian (năm)", y = "Tổng số ca nhiễm") +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    plot.background = element_rect(fill = "white", color = NA), # Nền trắng
+    panel.background = element_rect(fill = "white", color = NA),
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)
+  )
+ggsave("../outputs/plots/arima_forecast.png", p1, width = 10, height = 6, dpi = 300, bg = "white")
+
+# 2. Biểu đồ residuals
+residuals_df <- data.frame(
+  Time = time(ts_data),
+  Residuals = as.numeric(residuals(model_arima))
+)
+
+p2 <- ggplot(residuals_df, aes(x = Time, y = Residuals)) +
+  geom_line(color = "#FF4500", size = 1) + # Màu cam đỏ
+  geom_hline(yintercept = 0, linetype = "dashed", color = "#333333") +
+  labs(title = "Residuals của Mô hình ARIMA",
+       subtitle = "Sai số giữa giá trị thực tế và dự đoán",
+       x = "Thời gian (năm)", y = "Residuals") +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)
+  )
+ggsave("../outputs/plots/arima_residuals.png", p2, width = 10, height = 6, dpi = 300, bg = "white")
+
+# 3. Biểu đồ ACF
+acf_data <- acf(residuals(model_arima), plot = FALSE)
+acf_df <- data.frame(
+  Lag = acf_data$lag,
+  ACF = acf_data$acf
+)
+
+p3 <- ggplot(acf_df, aes(x = Lag, y = ACF)) +
+  geom_segment(aes(xend = Lag, yend = 0), color = "#1E90FF", size = 1) + # Màu xanh dương
+  geom_hline(yintercept = 0, color = "#333333") +
+  geom_hline(yintercept = c(-1.96/sqrt(length(ts_data)), 1.96/sqrt(length(ts_data))),
+             linetype = "dashed", color = "#FF4500") + # Màu cam đỏ cho vùng tin cậy
+  labs(title = "Tự tương quan (ACF) của Residuals ARIMA",
+       subtitle = "Kiểm tra tính ngẫu nhiên của residuals",
+       x = "Độ trễ (Lag)", y = "ACF") +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)
+  )
+ggsave("../outputs/plots/arima_acf.png", p3, width = 10, height = 6, dpi = 300, bg = "white")
+
+# In tóm tắt mô hình
+print("Tóm tắt mô hình ARIMA:")
+summary(model_arima)
+```
+
+#4.4 Phân cụm (Nhóm Quốc gia)
+- Phân cụm giúp xác định các nhóm quốc gia có đặc điểm dịch bệnh tương tự (ví dụ: nhóm kiểm soát tốt như Việt Nam, nhóm bùng phát mạnh như Mỹ).
+```{r}
+# Kiểm tra NA
+if (any(is.na(worldometer_model))) stop("Dữ liệu chứa NA")
+
+# Chọn đặc trưng số để phân cụm
+cluster_data <- worldometer_model %>% 
+  select(TotalCases, TotalDeaths, Population, TotalTests)
+
+# Xác định số cụm tối ưu bằng phương pháp Elbow (giữ nguyên code gốc)
+fviz_nbclust(cluster_data, kmeans, method = "wss") +
+  labs(title = "Phương pháp Elbow để chọn số cụm")
+
+# Lưu với nền trắng
+ggsave("../outputs/plots/elbow_plot.png", bg = "white")
+
+# Phân cụm K-Means với k=3 (giữ nguyên code gốc)
+set.seed(123)
+kmeans_model <- kmeans(cluster_data, centers = 3, nstart = 25)
+worldometer_model$Cluster <- as.factor(kmeans_model$cluster)
+
+# Trực quan hóa cụm bằng PCA (giữ nguyên code gốc)
+pca_data <- prcomp(cluster_data, scale. = TRUE)
+pca_plot <- fviz_pca_ind(pca_data, 
+                         geom.ind = "point",
+                         col.ind = worldometer_model$Cluster,
+                         palette = "jco",
+                         addEllipses = TRUE,
+                         legend.title = "Cụm") +
+  labs(title = "Phân cụm quốc gia theo đặc điểm dịch bệnh (PCA)")
+
+# Lưu với nền trắng
+ggsave("../outputs/plots/pca_clusters.png", pca_plot, bg = "white")
+
+# Tóm tắt số quốc gia mỗi cụm (giữ nguyên code gốc)
+print("Số quốc gia trong mỗi cụm:")
+table(worldometer_model$Cluster)
+```
+#5. Đánh giá Mô hình
+- Xác định mô hình hiệu quả nhất để dự đoán số ca tử vong, phân loại mức độ nghiêm trọng, hoặc nhóm quốc gia.
+- Hỗ trợ ưu tiên nguồn lực y tế cho các quốc gia có dịch bệnh nghiêm trọng (như Mỹ, Ấn Độ).
+```{r}
+# Kiểm tra NA trong dữ liệu
+if (any(is.na(worldometer_model))) stop("Dữ liệu chứa NA. Vui lòng kiểm tra lại.")
+
+# --- Hồi quy: RMSE, R² ---
+results_lm <- postResample(predict(model_lm, test_data), test_data$TotalDeaths)
+rmse_lm <- results_lm["RMSE"]
+rsquared_lm <- results_lm["Rsquared"]
+print("Hiệu suất hồi quy tuyến tính:")
+print(data.frame(Metric = c("RMSE", "R²"), Value = c(rmse_lm, rsquared_lm)))
+
+# --- Phân loại: Accuracy, F1-Score, ROC ---
+conf_matrix <- confusionMatrix(predict(model_glm, test_data), test_data$Severity)
+accuracy_glm <- conf_matrix$overall["Accuracy"]
+f1_score <- conf_matrix$byClass["F1"]
+roc_obj <- roc(as.numeric(test_data$Severity), as.numeric(predict(model_glm, test_data, type = "prob")[,2]))
+auc_glm <- auc(roc_obj)
+print("Hiệu suất phân loại:")
+print(data.frame(Metric = c("Accuracy", "F1-Score", "AUC"), Value = c(accuracy_glm, f1_score, auc_glm)))
+
+# Vẽ đường ROC với nền trắng
+roc_plot <- ggroc(roc_obj, color = "#1c61b6") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+  labs(title = "Đường ROC cho Mô hình Phân loại", 
+       x = "Tỷ lệ Dương tính Giả", 
+       y = "Tỷ lệ Dương tính Thật") +
+  annotate("text", x = 0.4, y = 0.1, label = paste("AUC =", round(auc_glm, 2))) +
+  theme_minimal() +
+  theme(plot.background = element_rect(fill = "white"))
+ggsave("../outputs/plots/roc_curve_updated.png", roc_plot, bg = "white")
+
+# --- Phân cụm: Silhouette Score ---
+cluster_data <- worldometer_model %>% select(TotalCases, TotalDeaths, Population, TotalTests)
+silhouette_score <- silhouette(kmeans_model$cluster, dist(cluster_data))
+silhouette_avg <- mean(silhouette_score[, 3])
+print("Hiệu suất phân cụm:")
+print(data.frame(Metric = "Silhouette Score", Value = silhouette_avg))
+
+# --- So sánh hiệu suất ---
+performance_summary <- data.frame(
+  Model = c("Hồi quy Tuyến tính", "Phân loại (Logistic)", "Phân cụm (K-Means)"),
+  Metric = c("RMSE", "Accuracy", "Silhouette Score"),
+  Value = c(rmse_lm, accuracy_glm, silhouette_avg)
+)
+
+# Bảng tóm tắt
+kable(performance_summary, caption = "Tóm tắt Hiệu suất Các Mô hình")
+
+# Biểu đồ so sánh với nền trắng
+perf_plot <- ggplot(performance_summary, aes(x = Model, y = Value, fill = Metric)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  labs(title = "So sánh Hiệu suất Các Mô hình", 
+       x = "Mô hình", 
+       y = "Giá trị Chỉ số") +
+  scale_fill_manual(values = c("RMSE" = "#1c61b6", 
+                              "Accuracy" = "#e41a1c", 
+                              "Silhouette Score" = "#4daf4a")) +
+  theme_minimal() +
+  theme(plot.background = element_rect(fill = "white"),
+        panel.background = element_rect(fill = "white"))
+ggsave("../outputs/plots/performance_comparison.png", perf_plot, bg = "white")
+
+# Lưu tóm tắt hiệu suất
+write_csv(performance_summary, "../outputs/performance_summary.csv")
+```
+
+**Giải thích từng phần**:
+
+1. **Hồi quy: RMSE, R²**:
+   - **Chức năng**: Tính RMSE (sai số trung bình) và R² (độ giải thích) của mô hình hồi quy tuyến tính (`model_lm`) trên tập test.
+   - **Ý nghĩa**: RMSE thấp (ví dụ, 5000 ca tử vong) và R² cao (ví dụ, 0.85) cho thấy mô hình dự đoán tốt số ca tử vong.
+   - **Đầu ra**: Bảng với RMSE và R².
+
+2. **Phân loại: Accuracy, F1-Score, ROC**:
+   - **Chức năng**:
+     - Accuracy: Tỷ lệ dự đoán đúng từ ma trận nhầm lẫn.
+     - F1-Score: Trung bình hài hòa giữa precision và recall, phù hợp cho dữ liệu không cân bằng.
+     - ROC/AUC: Đường cong ROC và diện tích dưới đường (AUC) đánh giá khả năng phân biệt lớp.
+   - **Ý nghĩa**: Accuracy cao (ví dụ, 90%), F1-Score tốt (ví dụ, 0.88), và AUC gần 1 (ví dụ, 0.92) cho thấy mô hình phân loại mức độ nghiêm trọng hiệu quả.
+   - **Đầu ra**: Bảng với Accuracy, F1-Score, AUC; biểu đồ ROC lưu vào `roc_curve_updated.png`.
+
+3. **Phân cụm: Silhouette Score**:
+   - **Chức năng**: Tính trung bình Silhouette Score cho K-Means (`kmeans_model`), đo lường độ tách biệt giữa các cụm.
+   - **Ý nghĩa**: Score gần 1 (ví dụ, 0.6) cho thấy các cụm rõ ràng, hỗ trợ phân nhóm quốc gia (thấp, trung bình, nghiêm trọng).
+   - **Đầu ra**: Bảng với Silhouette Score.
+
+4. **So sánh hiệu suất**:
+   - **Chức năng**: Tổng hợp các chỉ số vào bảng và vẽ biểu đồ cột để so sánh trực quan.
+   - **Ý nghĩa**: Giúp chọn mô hình tốt nhất (ví dụ, phân loại có Accuracy cao nhất) và xác định hướng cải thiện (như tăng Silhouette Score).
+   - **Đầu ra**: Bảng `performance_summary` và biểu đồ cột lưu vào `performance_comparison.png`.
+
+**Kết quả mong đợi**:
+- **Bảng hiệu suất**:
+  | Model                | Metric           | Value  |
+  |----------------------|------------------|--------|
+  | Hồi quy Tuyến tính   | RMSE             | 5000   |
+  | Phân loại (Logistic) | Accuracy         | 0.90   |
+  | Phân cụm (K-Means)   | Silhouette Score | 0.60   |
+- **Biểu đồ ROC** (`roc_curve_updated.png`): Đường cong với AUC (ví dụ, 0.92), chú thích AUC trên biểu đồ.
+- **Biểu đồ so sánh** (`performance_comparison.png`): Cột màu xanh (RMSE), đỏ (Accuracy), xanh lá (Silhouette Score) cho 3 mô hình.
+- **Tệp CSV**: `performance_summary.csv` lưu bảng hiệu suất.
+
+**Lưu ý**:
+- Đảm bảo các biến `model_lm`, `model_glm`, `kmeans_model`, `test_data` tồn tại từ các bước trước (4.1, 4.2, 4.3).
+- Nếu `model_glm` dùng `glmnet`, cần `type = "prob"` để lấy xác suất cho ROC:
+  ```R
+
+
