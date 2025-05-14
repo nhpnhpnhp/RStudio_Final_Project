@@ -786,6 +786,28 @@ plot <- ggplot(data, aes(x = Date, y = New.cases)) +
 ggsave("outputs/plots/new_cases_per_day.png", plot = plot, width = 8, height = 6)
 ```
 
+3.6 Kiểm định khoảng ước lượng
+```{r}
 
+boot_fn <- function(data, indices) {
+  d <- data[indices, ]
+  recov <- d$New.recovered / d$Active
+  recov <- remove_outliers(recov)
+  gamma <- mean(recov, na.rm = TRUE)
+  
+  d$dI <- c(NA, diff(d$I))
+  beta_est <- (d$dI + gamma * d$I) / (d$S * d$I)
+  beta_est <- remove_outliers(beta_est)
+  beta <- mean(beta_est, na.rm = TRUE)
+  
+  return(c(beta = beta, gamma = gamma))
+}
+
+boot_results <- boot(data = subset_data, statistic = boot_fn, R = 1000)
+
+boot_results
+boot.ci(boot_results, type = "perc", index = 1)  # CI cho beta
+boot.ci(boot_results, type = "perc", index = 2)  # CI cho gamma
+```
 
 
