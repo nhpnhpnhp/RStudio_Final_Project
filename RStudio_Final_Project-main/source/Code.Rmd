@@ -860,10 +860,8 @@ end_date <- as.Date("2020-07-27")
 subset_data <- data[data$Date >= start_date & data$Date <= end_date, ]
 # Hàm loại bỏ ngoại lệ
 remove_outliers <- function(x, lower_q = 0.05, upper_q = 0.95) {
-  # Mục đích: loại bỏ dữ liệu bất thường có thể do lỗi ghi nhận (ví dụ: số hồi phục = 0 hoặc tăng đột biến)
   qnt <- quantile(x, probs = c(lower_q, upper_q), na.rm = TRUE)
-  outliers <- which(x < qnt[1] | x > qnt[2])
-  x[outliers] <- NA
+  x[x < qnt[1] | x > qnt[2]] <- NA
   return(x)
 }
 # Tính gamma theo từng ngày (gamma_est), sau đó lấy trung bình để dùng trong mô hình SIR
@@ -879,15 +877,15 @@ subset_data$beta_est <- remove_outliers(subset_data$beta_est)
 beta <- mean(subset_data$beta_est, na.rm = TRUE)
 
 
-# Beta theo thời gian
-ggplot(subset_data, aes(x = Date)) +
+# Beta theo thời gian 
+ggplot(subset_data %>% filter(!is.na(beta_est)), aes(x = Date)) +
   geom_line(aes(y = beta_est), color = "red") +
   labs(title = "Biến động hệ số lây nhiễm (β) theo thời gian",
        y = "β (beta)", x = "Ngày") +
   theme_minimal()
 
-# Gamma theo thời gian
-ggplot(subset_data, aes(x = Date)) +
+# Gamma theo thời gian 
+ggplot(subset_data %>% filter(!is.na(gamma_est)), aes(x = Date)) +
   geom_line(aes(y = gamma_est), color = "darkgreen") +
   labs(title = "Biến động hệ số hồi phục (γ) theo thời gian",
        y = "γ (gamma)", x = "Ngày") +
@@ -908,20 +906,22 @@ init <- c(S = subset_data$S[1], I = subset_data$I[1], R = subset_data$R[1])
 parameters <- c(beta = beta, gamma = gamma)
 times <- 1:nrow(subset_data)
 
-# Mô phỏng
+# Mô phỏng SIR
 out <- ode(y = init, times = times, func = sir_model, parms = parameters)
 out <- as.data.frame(out)
 
-library(ggplot2)
-
+# So sánh số ca nhiễm (filter out NA values)
 ggplot() +
   geom_line(data = out, aes(x = time, y = I, color = "Mô hình")) +
-  geom_line(data = subset_data, aes(x = 1:nrow(subset_data), y = I, color = "Thực tế")) +
-  labs(title = "So sánh số ca nhiễm (I): mô hình vs thực tế", x = "Ngày", y = "Số ca") +
+  geom_line(data = subset_data %>% filter(!is.na(I)), 
+            aes(x = 1:nrow(subset_data %>% filter(!is.na(I))), 
+            y = I, color = "Thực tế")) +
+  labs(title = "So sánh số ca nhiễm (I): mô hình vs thực tế", 
+       x = "Ngày", y = "Số ca") +
   scale_color_manual(values = c("Mô hình" = "red", "Thực tế" = "blue")) +
   theme_minimal()
 ```
-3. Tính toán các chỉ số theo yêu cầu
+3.2 Tính toán các chỉ số theo yêu cầu
 Tính tốc độ hồi phục trong khoảng thời gian
 
 ```{r}
@@ -938,7 +938,7 @@ cat("Tốc độ hồi phục trung bình:", recovery_rate, "\n")
 
 
 
-3.2 Tính tốc độ thay đổi số ca nhiễm trong khoảng thời gian
+3.3 Tính tốc độ thay đổi số ca nhiễm trong khoảng thời gian
 
 ```{r}
 calculate_infection_change_rate <- function(data, start_date, end_date) {
