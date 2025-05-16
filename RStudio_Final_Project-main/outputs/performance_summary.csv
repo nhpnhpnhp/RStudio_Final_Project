@@ -1,0 +1,4 @@
+Model,Metric,Value
+Hồi quy Tuyến tính,RMSE,0.21360682703165645
+Phân loại (Logistic),Accuracy,0.7804878048780488
+Phân cụm (K-Means),Silhouette Score,0.7864762839230008
