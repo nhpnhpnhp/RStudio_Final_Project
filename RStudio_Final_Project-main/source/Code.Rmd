@@ -5,11 +5,10 @@ date: "2025-05-14"
 ---
 
 
-Cài đặt các gói cần thiết;
-Load các thư viện
+- Cài đặt các gói cần thiết
+- Load các thư viện
 
 ```{r}
-
 # Xử lý dữ liệu
 library(tidyverse)    # Gồm dplyr, ggplot2, readr, tidyr, tibble,...
 library(data.table)   # Xử lý nhanh dữ liệu lớn
@@ -17,8 +16,10 @@ library(readr)        # Đọc dữ liệu (cũng nằm trong tidyverse)
 library(tibble)       # Khung dữ liệu nâng cao (trong tidyverse)
 library(dplyr)        # Xử lý dữ liệu (cũng nằm trong tidyverse)
 library(pROC)
+
 # Xử lý ngày tháng
 library(lubridate)
+
 # Trực quan hóa
 library(ggplot2)      # Biểu đồ cơ bản (trong tidyverse)
 library(plotly)       # Biểu đồ tương tác
@@ -29,7 +30,6 @@ library(gridExtra)    # Sắp xếp nhiều biểu đồ
 library(factoextra)   # Trực quan hóa PCA, clustering,...
 
 # Học máy và thống kê
-
 library(caret)        # Học máy tổng quát
 library(cluster)      # Phân cụm (K-means, PAM, hier clustering,...)
 library(e1071)        # SVM, Naive Bayes,...
@@ -38,6 +38,7 @@ library(forecast)     # Dự báo chuỗi thời gian
 library(boot)         # Bootstrap
 library(broom)        # Chuyển model thành data frame
 library(deSolve)      # Mô hình SIR, hệ phương trình vi phân
+
 # Báo cáo
 library(knitr)        # Hiển thị bảng đẹp trong báo cáo
 ```
